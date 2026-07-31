@@ -66,5 +66,9 @@ final class QuotaTests: XCTestCase {
 
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
         XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "Codex 100%")
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "100%"
+        )
     }
 }

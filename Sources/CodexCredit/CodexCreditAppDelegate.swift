@@ -8,6 +8,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
+    private let showsStatusItemBranding = false
 
     private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
     private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
@@ -92,8 +93,10 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
-        button.title = QuotaFormatter.statusTitle(for: nil)
-        button.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Codex")
+        button.title = statusTitle(for: nil)
+        button.image = showsStatusItemBranding
+            ? NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Codex")
+            : nil
         button.imagePosition = .imageLeading
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         button.toolTip = "Codex 剩余额度"
@@ -133,7 +136,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     private func renderLoading() {
-        statusItem.button?.title = QuotaFormatter.statusTitle(for: nil)
+        statusItem.button?.title = statusTitle(for: nil)
         headerItem.title = "Codex 剩余额度"
         summaryItem.title = "正在读取额度…"
         primaryItem.isHidden = true
@@ -160,7 +163,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     private func renderQuota(_ quota: CodexQuota) {
-        statusItem.button?.title = QuotaFormatter.statusTitle(for: quota)
+        statusItem.button?.title = statusTitle(for: quota)
         headerItem.title = "Codex · \(quota.planName)"
         summaryItem.title = QuotaFormatter.summary(for: quota)
 
@@ -201,7 +204,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     private func renderErrorWithoutQuota() {
-        statusItem.button?.title = "Codex !"
+        statusItem.button?.title = showsStatusItemBranding ? "Codex !" : "!"
         headerItem.title = "Codex 剩余额度"
         summaryItem.title = lastError?.localizedDescription ?? "无法读取额度"
         primaryItem.isHidden = true
@@ -209,6 +212,13 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         creditsItem.isHidden = true
         updatedItem.isHidden = true
         renderErrorItem()
+    }
+
+    private func statusTitle(for quota: CodexQuota?) -> String {
+        QuotaFormatter.statusTitle(
+            for: quota,
+            includingProductName: showsStatusItemBranding
+        )
     }
 
     private func renderErrorItem() {

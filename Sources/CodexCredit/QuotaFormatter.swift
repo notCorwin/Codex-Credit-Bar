@@ -1,11 +1,21 @@
 import Foundation
 
 enum QuotaFormatter {
-    static func statusTitle(for quota: CodexQuota?) -> String {
-        guard let quota else { return "Codex …" }
-        if quota.credits?.unlimited == true { return "Codex ∞" }
-        guard let remaining = quota.remainingPercent else { return "Codex —" }
-        return "Codex \(remaining)%"
+    static func statusTitle(
+        for quota: CodexQuota?,
+        includingProductName: Bool = true
+    ) -> String {
+        let value: String
+        if quota == nil {
+            value = "…"
+        } else if quota?.credits?.unlimited == true {
+            value = "∞"
+        } else if let remaining = quota?.remainingPercent {
+            value = "\(remaining)%"
+        } else {
+            value = "—"
+        }
+        return includingProductName ? "Codex \(value)" : value
     }
 
     static func summary(for quota: CodexQuota) -> String {
