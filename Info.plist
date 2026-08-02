@@ -8,6 +8,8 @@
     <string>CodexCredit</string>
     <key>CFBundleIdentifier</key>
     <string>com.codexcredit.menu-bar</string>
+    <key>CFBundleIconFile</key>
+    <string>CodexCredit.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
