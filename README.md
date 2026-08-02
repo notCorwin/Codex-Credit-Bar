@@ -46,6 +46,19 @@ open dist/CodexCredit.app
 
 构建脚本会生成经过 ad-hoc 签名的 `dist/CodexCredit.app`。`dist/` 是构建产物，不应提交到仓库。
 
+## 发布
+
+推送符合 `v*.*.*` 格式的版本标签，或在 GitHub 中发布对应的 Release 后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `CodexCredit.app`，并上传 `CodexCredit-<版本>-macOS.zip` 到该 Release。
+
+例如：
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+工作流定义位于 `.github/workflows/release.yml`。
+
 ## 使用说明
 
 应用启动后会显示在 macOS 菜单栏。点击菜单栏中的额度数字即可查看详情：

@@ -1,0 +1,45 @@
+name: Release macOS App
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build and test
+        run: |
+          swift build
+          swift test
+
+      - name: Package app
+        run: |
+          ./scripts/build-app.sh
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/CodexCredit.app \
+            "CodexCredit-${RELEASE_TAG}-macOS.zip"
+
+      - name: Verify package
+        run: |
+          test -x dist/CodexCredit.app/Contents/MacOS/CodexCredit
+          test -f dist/CodexCredit.app/Contents/Info.plist
+          unzip -t "CodexCredit-${RELEASE_TAG}-macOS.zip"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: CodexCredit-${{ env.RELEASE_TAG }}-macOS.zip
+          fail_on_unmatched_files: true
