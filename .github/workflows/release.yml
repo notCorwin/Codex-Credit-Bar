@@ -42,34 +42,44 @@ jobs:
           test -f CodexCredit.app.tar
           tar -tf CodexCredit.app.tar | grep -qx "CodexCredit.app/Contents/MacOS/CodexCredit"
 
-      - name: Create or update autobuild Release
+      - name: Replace autobuild Release
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          # Editing a release keeps its original published_at. Delete and recreate
+          # it so the fixed autobuild release always gets the current timestamp.
+          if release_id="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq '.id' 2>/dev/null)"; then
+            gh api --method DELETE \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          fi
+
+          # A release deletion does not delete its tag, so move the tag explicitly
+          # before creating the replacement release at the current commit.
+          if gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+            >/dev/null 2>&1; then
             gh api --method PATCH \
               "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
               -f sha="$COMMIT_SHA" \
               -F force=true
-            gh release edit "$RELEASE_TAG" \
-              --title "autobuild" \
-              --latest \
-              --prerelease=false \
-              --notes "自动构建自提交 ${COMMIT_SHA}。"
           else
-            gh release create "$RELEASE_TAG" \
-              --target "$COMMIT_SHA" \
-              --title "autobuild" \
-              --latest \
-              --notes "自动构建自提交 ${COMMIT_SHA}。"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${RELEASE_TAG}" \
+              -f sha="$COMMIT_SHA"
           fi
 
+          gh release create "$RELEASE_TAG" \
+            --target "$COMMIT_SHA" \
+            --title "autobuild" \
+            --latest \
+            --notes "自动构建自提交 ${COMMIT_SHA}。"
+
           release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
-          asset_ids="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
-            --jq '.[] | select(.name == "CodexCredit.app.tar" or .name == "CodexCredit.app") | .id' || true)"
-          for asset_id in $asset_ids; do
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
-          done
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+          [[ "$tag_sha" == "$COMMIT_SHA" ]]
 
           curl --fail --silent --show-error \
             -X POST \

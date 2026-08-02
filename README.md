@@ -52,7 +52,7 @@ open dist/CodexCredit.app
 
 每次向 GitHub 推送提交后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `CodexCredit.app`，并更新一个名为 **autobuild** 的正式 Release。
 
-Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `CodexCredit.app`。后续提交会自动将标签指向最新提交并覆盖旧附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名为 `CodexCredit.app.tar`，但显示标签仍为 `CodexCredit.app`；这是未压缩的 tar 数据，下载后的更新流程会自动处理。
+Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `CodexCredit.app`。每次提交都会删除并重新创建该 Release，将标签指向最新提交并刷新发布时间，不会保留旧 Release 或附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名为 `CodexCredit.app.tar`，但显示标签仍为 `CodexCredit.app`；这是未压缩的 tar 数据，下载后的更新流程会自动处理。
 
 工作流定义位于 `.github/workflows/release.yml`。
 
