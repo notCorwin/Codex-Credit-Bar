@@ -98,4 +98,23 @@ final class QuotaTests: XCTestCase {
         )
         XCTAssertNil(AppUpdater.revision(in: "没有提交信息"))
     }
+
+    func testProxyIsPassedToCodexEnvironment() throws {
+        let proxy = try XCTUnwrap(URL(string: "http://127.0.0.1:7890"))
+        let environment = CodexAppServerClient.applying(proxyURL: proxy, to: ["HOME": "/tmp/home"])
+
+        XCTAssertEqual(environment["HTTPS_PROXY"], proxy.absoluteString)
+        XCTAssertEqual(environment["https_proxy"], proxy.absoluteString)
+        XCTAssertEqual(environment["HOME"], "/tmp/home")
+    }
+
+    func testPACProxyIsResolvedForCodex() throws {
+        let target = try XCTUnwrap(URL(string: "https://chatgpt.com"))
+        let script = "function FindProxyForURL(url, host) { return 'PROXY 127.0.0.1:7890; DIRECT;'; }"
+
+        XCTAssertEqual(
+            CodexAppServerClient.proxyURL(forAutoConfigurationScript: script, targetURL: target),
+            URL(string: "http://127.0.0.1:7890")
+        )
+    }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CFNetwork
 
 final class CodexAppServerClient {
     typealias Completion = (Result<RateLimitsResponse, Error>) -> Void
@@ -60,6 +61,7 @@ final class CodexAppServerClient {
         environment["HOME"] = NSHomeDirectory()
         environment["CODEX_HOME"] = environment["CODEX_HOME"] ?? "\(NSHomeDirectory())/.codex"
         environment["PATH"] = Self.processPath(environment["PATH"])
+        environment = Self.environmentApplyingSystemProxy(environment)
         process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         process.environment = environment
 
@@ -344,6 +346,76 @@ final class CodexAppServerClient {
         let existing = (currentPath ?? "").split(separator: ":").map(String.init)
         var paths = Set<String>()
         return (additions + existing).filter { paths.insert($0).inserted }.joined(separator: ":")
+    }
+
+    static func environmentApplyingSystemProxy(
+        _ environment: [String: String],
+        targetURL: URL = URL(string: "https://chatgpt.com")!
+    ) -> [String: String] {
+        let proxyKeys = [
+            "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"
+        ]
+        guard !proxyKeys.contains(where: { environment[$0]?.isEmpty == false }),
+              let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue(),
+              let proxies = CFNetworkCopyProxiesForURL(targetURL as CFURL, settings)
+                .takeRetainedValue() as? [[AnyHashable: Any]],
+              let proxyURL = resolvedProxyURL(from: proxies, targetURL: targetURL) else {
+            return environment
+        }
+        return applying(proxyURL: proxyURL, to: environment)
+    }
+
+    static func applying(proxyURL: URL, to environment: [String: String]) -> [String: String] {
+        var environment = environment
+        let value = proxyURL.absoluteString
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
+            environment[key] = value
+        }
+        return environment
+    }
+
+    private static func resolvedProxyURL(
+        from proxies: [[AnyHashable: Any]],
+        targetURL: URL
+    ) -> URL? {
+        for proxy in proxies {
+            let type = proxy[kCFProxyTypeKey] as? String
+            if type == kCFProxyTypeAutoConfigurationURL as String,
+               let pacURL = proxy[kCFProxyAutoConfigurationURLKey] as? URL,
+               let script = try? String(contentsOf: pacURL, encoding: .utf8),
+               let proxyURL = proxyURL(forAutoConfigurationScript: script, targetURL: targetURL) {
+                return proxyURL
+            }
+            if type == kCFProxyTypeHTTP as String || type == kCFProxyTypeHTTPS as String,
+               let host = proxy[kCFProxyHostNameKey] as? String,
+               let port = proxy[kCFProxyPortNumberKey] as? Int {
+                var components = URLComponents()
+                components.scheme = "http"
+                components.host = host
+                components.port = port
+                return components.url
+            }
+            if type == kCFProxyTypeSOCKS as String,
+               let host = proxy[kCFProxyHostNameKey] as? String,
+               let port = proxy[kCFProxyPortNumberKey] as? Int {
+                var components = URLComponents()
+                components.scheme = "socks5h"
+                components.host = host
+                components.port = port
+                return components.url
+            }
+        }
+        return nil
+    }
+
+    static func proxyURL(forAutoConfigurationScript script: String, targetURL: URL) -> URL? {
+        var error: Unmanaged<CFError>?
+        guard let proxies = CFNetworkCopyProxiesForAutoConfigurationScript(
+            script as CFString,
+            targetURL as CFURL,
+            &error
+        )?.takeRetainedValue() as? [[AnyHashable: Any]] else { return nil }
+        return resolvedProxyURL(from: proxies, targetURL: targetURL)
     }
 }
 
