@@ -65,6 +65,10 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     @objc private func refreshNow() {
+        refreshNowWithRetry(allowingRetry: true)
+    }
+
+    private func refreshNowWithRetry(allowingRetry: Bool) {
         guard !isRefreshing else { return }
         isRefreshing = true
         refreshItem.isEnabled = false
@@ -85,6 +89,11 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
             case .failure(let error):
                 lastError = error
                 renderCurrentState()
+                if allowingRetry {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                        self?.refreshNowWithRetry(allowingRetry: false)
+                    }
+                }
             }
         }
     }
