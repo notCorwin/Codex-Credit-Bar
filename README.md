@@ -46,16 +46,11 @@ open dist/CodexCredit.app
 
 构建脚本会生成经过 ad-hoc 签名的 `dist/CodexCredit.app`。`dist/` 是构建产物，不应提交到仓库。
 
-## 发布
+## 自动构建发布
 
-推送符合 `v*.*.*` 格式的版本标签，或在 GitHub 中发布对应的 Release 后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `CodexCredit.app`，并上传 `CodexCredit-<版本>-macOS.zip` 到该 Release。
+每次向 GitHub 推送提交后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `CodexCredit.app`，并更新一个名为 **Latest Build** 的预发布 Release。
 
-例如：
-
-```sh
-git tag v1.0.0
-git push origin v1.0.0
-```
+Release 使用固定的 `latest` 标签，附件为 `CodexCredit-latest-macOS.zip`。因此不需要手动创建 Release 或上传文件；后续提交会自动替换该附件并将标签指向最新提交。
 
 工作流定义位于 `.github/workflows/release.yml`。
 

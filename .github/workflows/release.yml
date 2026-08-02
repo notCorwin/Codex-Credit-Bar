@@ -1,20 +1,23 @@
-name: Release macOS App
+name: Latest macOS Release
 
 on:
-  release:
-    types: [published]
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - "**"
 
 permissions:
   contents: write
+
+concurrency:
+  group: latest-release
+  cancel-in-progress: true
 
 jobs:
   build-and-release:
     runs-on: macos-latest
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+      RELEASE_TAG: latest
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -37,9 +40,23 @@ jobs:
           test -f dist/CodexCredit.app/Contents/Info.plist
           unzip -t "CodexCredit-${RELEASE_TAG}-macOS.zip"
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: CodexCredit-${{ env.RELEASE_TAG }}-macOS.zip
-          fail_on_unmatched_files: true
+      - name: Create or update rolling release
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
+              -f sha="$COMMIT_SHA" \
+              -F force=true
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$COMMIT_SHA" \
+              --title "Latest Build" \
+              --prerelease \
+              --notes "自动构建自提交 ${COMMIT_SHA}。"
+          fi
+
+          gh release upload "$RELEASE_TAG" \
+            "CodexCredit-${RELEASE_TAG}-macOS.zip" \
+            --clobber
