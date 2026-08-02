@@ -9,10 +9,13 @@ final class CodexAppServerClient {
     private var outputPipe: Pipe?
     private var errorPipe: Pipe?
     private var outputBuffer = Data()
+    private var errorBuffer = Data()
     private var pendingRequests: [Int: (Result<Data, Error>) -> Void] = [:]
+    private var requestTimeouts: [Int: DispatchWorkItem] = [:]
     private var waitingForReady: [Completion] = []
     private var nextRequestID = 1
     private var initialized = false
+    private let requestTimeout: TimeInterval = 15
 
     func fetchRateLimits(completion: @escaping Completion) {
         stateQueue.async { [weak self] in
@@ -51,15 +54,18 @@ final class CodexAppServerClient {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = error
-        process.environment = ProcessInfo.processInfo.environment.merging(
-            ["TERM": "dumb", "NO_COLOR": "1"],
-            uniquingKeysWith: { _, new in new }
-        )
+        var environment = ProcessInfo.processInfo.environment
+        environment["TERM"] = "dumb"
+        environment["NO_COLOR"] = "1"
+        environment["HOME"] = NSHomeDirectory()
+        environment["PATH"] = Self.processPath(environment["PATH"])
+        process.environment = environment
 
         inputPipe = input
         outputPipe = output
         errorPipe = error
         outputBuffer.removeAll(keepingCapacity: true)
+        errorBuffer.removeAll(keepingCapacity: true)
         initialized = false
 
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -73,10 +79,14 @@ final class CodexAppServerClient {
             }
         }
 
-        error.fileHandleForReading.readabilityHandler = { handle in
+        error.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty {
                 handle.readabilityHandler = nil
+                return
+            }
+            self?.stateQueue.async { [weak self] in
+                self?.errorBuffer.append(data)
             }
         }
 
@@ -86,6 +96,7 @@ final class CodexAppServerClient {
             }
         }
 
+        self.process = process
         do {
             try process.run()
         } catch {
@@ -94,7 +105,6 @@ final class CodexAppServerClient {
             return
         }
 
-        self.process = process
         sendInitialize()
     }
 
@@ -151,6 +161,14 @@ final class CodexAppServerClient {
         let id = nextRequestID
         nextRequestID += 1
         pendingRequests[id] = completion
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let completion = self.pendingRequests.removeValue(forKey: id) else { return }
+            self.requestTimeouts.removeValue(forKey: id)
+            completion(.failure(CodexClientError.requestTimedOut))
+        }
+        requestTimeouts[id] = timeout
+        stateQueue.asyncAfter(deadline: .now() + requestTimeout, execute: timeout)
 
         let request: [String: Any] = [
             "id": id,
@@ -166,6 +184,8 @@ final class CodexAppServerClient {
             data.append(0x0A)
             try inputPipe.fileHandleForWriting.write(contentsOf: data)
         } catch {
+            requestTimeouts[id]?.cancel()
+            requestTimeouts.removeValue(forKey: id)
             pendingRequests.removeValue(forKey: id)
             completion(.failure(error))
         }
@@ -201,6 +221,8 @@ final class CodexAppServerClient {
             guard let completion = pendingRequests.removeValue(forKey: id) else {
                 continue
             }
+            requestTimeouts[id]?.cancel()
+            requestTimeouts.removeValue(forKey: id)
 
             if let error = message["error"] as? [String: Any] {
                 let message = error["message"] as? String ?? "Codex 返回了未知错误"
@@ -218,12 +240,18 @@ final class CodexAppServerClient {
     }
 
     private func processTerminated(_ terminatedProcess: Process) {
-        guard process === terminatedProcess || process == nil else { return }
+        guard process === terminatedProcess else { return }
         process = nil
         initialized = false
-        let error = CodexClientError.processExited(terminatedProcess.terminationStatus)
+        let details = String(data: errorBuffer, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let error = CodexClientError.processExited(terminatedProcess.terminationStatus, details)
         let callbacks = Array(pendingRequests.values)
         pendingRequests.removeAll()
+        for timeout in requestTimeouts.values {
+            timeout.cancel()
+        }
+        requestTimeouts.removeAll()
         for callback in callbacks {
             callback(.failure(error))
         }
@@ -254,37 +282,63 @@ final class CodexAppServerClient {
         }
         process = nil
         initialized = false
+        for timeout in requestTimeouts.values {
+            timeout.cancel()
+        }
+        requestTimeouts.removeAll()
+        pendingRequests.removeAll()
         outputPipe = nil
         errorPipe = nil
         inputPipe = nil
         outputBuffer.removeAll(keepingCapacity: true)
+        errorBuffer.removeAll(keepingCapacity: true)
     }
 
     static func findExecutable(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) -> URL? {
-        if let configured = environment["CODEX_BIN"],
-           fileManager.isExecutableFile(atPath: configured) {
-            return URL(fileURLWithPath: configured)
-        }
-
+        let configured = environment["CODEX_BIN"].map { String($0) }
         let pathCandidates = (environment["PATH"] ?? "")
-            .split(separator: ":")
-            .map { String($0) }
-            .map { URL(fileURLWithPath: $0).appendingPathComponent("codex").path }
-
-        let candidates = pathCandidates + [
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map { URL(fileURLWithPath: String($0)).appendingPathComponent("codex").path }
+        let home = NSHomeDirectory()
+        let candidates = (configured.map { [$0] } ?? []) + pathCandidates + [
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
-            "\(NSHomeDirectory())/.local/bin/codex",
-            "\(NSHomeDirectory())/bin/codex"
+            "\(home)/.local/bin/codex",
+            "\(home)/bin/codex",
+            "\(home)/.npm-global/bin/codex",
+            "\(home)/.npm/bin/codex",
+            "\(home)/.volta/bin/codex",
+            "\(home)/.asdf/shims/codex"
         ]
 
-        for candidate in candidates where fileManager.isExecutableFile(atPath: candidate) {
-            return URL(fileURLWithPath: candidate)
+        var seen = Set<String>()
+        for candidate in candidates {
+            let path = URL(fileURLWithPath: candidate).standardizedFileURL.path
+            guard seen.insert(path).inserted,
+                  fileManager.isExecutableFile(atPath: path) else { continue }
+            return URL(fileURLWithPath: path)
         }
         return nil
+    }
+
+    private static func processPath(_ currentPath: String?) -> String {
+        let home = NSHomeDirectory()
+        let additions = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "\(home)/.local/bin",
+            "\(home)/bin",
+            "\(home)/.npm-global/bin",
+            "\(home)/.npm/bin",
+            "\(home)/.volta/bin",
+            "\(home)/.asdf/shims"
+        ]
+        let existing = (currentPath ?? "").split(separator: ":").map(String.init)
+        var paths = Set<String>()
+        return (additions + existing).filter { paths.insert($0).inserted }.joined(separator: ":")
     }
 }
 
@@ -294,7 +348,8 @@ enum CodexClientError: LocalizedError {
     case writeFailed(String)
     case invalidResponse(String)
     case server(String)
-    case processExited(Int32)
+    case requestTimedOut
+    case processExited(Int32, String?)
 
     var errorDescription: String? {
         switch self {
@@ -308,8 +363,12 @@ enum CodexClientError: LocalizedError {
             return "Codex 返回的数据无效：\(message)"
         case .server(let message):
             return "Codex：\(message)"
-        case .processExited(let status):
-            return status == 0 ? "Codex 连接已关闭。" : "Codex 连接异常退出（\(status)）。"
+        case .requestTimedOut:
+            return "Codex 响应超时，请确认已完成 codex login。"
+        case .processExited(let status, let details):
+            let description = status == 0 ? "Codex 连接已关闭。" : "Codex 连接异常退出（\(status)）。"
+            guard let details, !details.isEmpty else { return description }
+            return "\(description)\n\(details)"
         }
     }
 }

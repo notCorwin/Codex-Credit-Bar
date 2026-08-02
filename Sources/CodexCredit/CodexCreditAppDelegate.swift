@@ -2,12 +2,14 @@ import AppKit
 
 final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let client = CodexAppServerClient()
+    private let updater = AppUpdater()
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
+    private var isCheckingForUpdate = false
     private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
     private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -23,6 +25,11 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private lazy var openChatGPTItem = NSMenuItem(
         title: "打开 ChatGPT",
         action: #selector(openChatGPT),
+        keyEquivalent: ""
+    )
+    private lazy var checkForUpdatesItem = NSMenuItem(
+        title: "检查更新…",
+        action: #selector(checkForUpdatesNow),
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(
@@ -43,6 +50,9 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
             userInfo: nil,
             repeats: true
         )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.checkForUpdates(silently: true)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -80,10 +90,24 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     @objc private func openChatGPT() {
-        guard let appURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.openai.chat"
-        ) else { return }
-        NSWorkspace.shared.open(appURL)
+        let bundleIdentifiers = ["com.openai.codex", "com.openai.chat"]
+        guard let appURL = bundleIdentifiers
+            .compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) })
+            .first else {
+            showAlert(
+                title: "找不到 ChatGPT App",
+                message: "请先安装 ChatGPT macOS App。应用不会打开网页。"
+            )
+            return
+        }
+        guard NSWorkspace.shared.open(appURL) else {
+            showAlert(title: "无法打开 ChatGPT App", message: "请稍后重试。")
+            return
+        }
+    }
+
+    @objc private func checkForUpdatesNow() {
+        checkForUpdates(silently: false)
     }
 
     @objc private func quit() {
@@ -123,11 +147,13 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         menu.addItem(NSMenuItem.separator())
         menu.addItem(refreshItem)
         menu.addItem(openChatGPTItem)
+        menu.addItem(checkForUpdatesItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         refreshItem.target = self
         openChatGPTItem.target = self
+        checkForUpdatesItem.target = self
         quitItem.target = self
     }
 
@@ -224,5 +250,61 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         } else {
             errorItem.isHidden = true
         }
+    }
+
+    private func checkForUpdates(silently: Bool) {
+        guard !isCheckingForUpdate else { return }
+        isCheckingForUpdate = true
+        checkForUpdatesItem.isEnabled = false
+        updater.check { [weak self] result in
+            guard let self else { return }
+            isCheckingForUpdate = false
+            checkForUpdatesItem.isEnabled = true
+
+            switch result {
+            case .success(let update):
+                guard let update else {
+                    if !silently {
+                        showAlert(title: "已是最新版本", message: "当前没有可用更新。")
+                    }
+                    return
+                }
+                presentUpdate(update)
+            case .failure(let error):
+                if !silently {
+                    showAlert(title: "检查更新失败", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func presentUpdate(_ update: AppUpdate) {
+        let alert = NSAlert()
+        alert.messageText = "发现新版本"
+        let revision = update.revision == "unknown" ? "" : "\n构建：\(update.revision.prefix(7))"
+        alert.informativeText = "\(update.name)\(revision)\n是否下载并安装？"
+        alert.addButton(withTitle: "更新")
+        alert.addButton(withTitle: "稍后")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        checkForUpdatesItem.isEnabled = false
+        updater.downloadAndInstall(update) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                NSApp.terminate(nil)
+            case .failure(let error):
+                checkForUpdatesItem.isEnabled = true
+                showAlert(title: "更新失败", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 }

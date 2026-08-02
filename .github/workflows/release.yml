@@ -1,4 +1,4 @@
-name: Latest macOS Release
+name: Autobuild macOS Release
 
 on:
   push:
@@ -9,14 +9,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: latest-release
+  group: autobuild-release
   cancel-in-progress: true
 
 jobs:
   build-and-release:
     runs-on: macos-latest
     env:
-      RELEASE_TAG: latest
+      RELEASE_TAG: autobuild
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out source
@@ -27,20 +27,21 @@ jobs:
           swift build
           swift test
 
-      - name: Package app
+      - name: Package app asset
         run: |
-          ./scripts/build-app.sh
-          ditto -c -k --sequesterRsrc --keepParent \
-            dist/CodexCredit.app \
-            "CodexCredit-${RELEASE_TAG}-macOS.zip"
+          APP_REVISION="$GITHUB_SHA" ./scripts/build-app.sh
+          # GitHub Release assets must be single files. Keep the bundle uncompressed
+          # in a tar stream while retaining the requested CodexCredit.app asset name.
+          tar -cf CodexCredit.app -C dist CodexCredit.app
 
       - name: Verify package
         run: |
           test -x dist/CodexCredit.app/Contents/MacOS/CodexCredit
           test -f dist/CodexCredit.app/Contents/Info.plist
-          unzip -t "CodexCredit-${RELEASE_TAG}-macOS.zip"
+          test -f CodexCredit.app
+          tar -tf CodexCredit.app | grep -qx "CodexCredit.app/Contents/MacOS/CodexCredit"
 
-      - name: Create or update rolling release
+      - name: Create or update autobuild Release
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -49,14 +50,17 @@ jobs:
               "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
               -f sha="$COMMIT_SHA" \
               -F force=true
+            gh release edit "$RELEASE_TAG" \
+              --title "autobuild" \
+              --latest \
+              --prerelease=false \
+              --notes "自动构建自提交 ${COMMIT_SHA}。"
           else
             gh release create "$RELEASE_TAG" \
               --target "$COMMIT_SHA" \
-              --title "Latest Build" \
-              --prerelease \
+              --title "autobuild" \
+              --latest \
               --notes "自动构建自提交 ${COMMIT_SHA}。"
           fi
 
-          gh release upload "$RELEASE_TAG" \
-            "CodexCredit-${RELEASE_TAG}-macOS.zip" \
-            --clobber
+          gh release upload "$RELEASE_TAG" CodexCredit.app --clobber

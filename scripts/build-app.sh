@@ -12,6 +12,10 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN_DIR/CodexCredit" "$APP_DIR/Contents/MacOS/CodexCredit"
 cp "$ROOT_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
+if [[ -n "${APP_REVISION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleSourceRevision $APP_REVISION" \
+        "$APP_DIR/Contents/Info.plist"
+fi
 
 codesign --force --deep --sign - "$APP_DIR" >/dev/null
 printf 'Built %s\n' "$APP_DIR"

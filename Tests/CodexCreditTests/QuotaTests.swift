@@ -71,4 +71,31 @@ final class QuotaTests: XCTestCase {
             "100%"
         )
     }
+
+    func testConfiguredCodexPathTakesPriority() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexCreditTests-\(UUID().uuidString)")
+        let executable = directory.appendingPathComponent("codex")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("#!/bin/sh\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: executable.path
+        )
+
+        let result = CodexAppServerClient.findExecutable(
+            environment: ["CODEX_BIN": executable.path, "PATH": ""],
+            fileManager: .default
+        )
+        XCTAssertEqual(result?.path, executable.path)
+    }
+
+    func testReleaseRevisionIsReadFromBuildNotes() {
+        XCTAssertEqual(
+            AppUpdater.revision(in: "自动构建自提交 0123456789abcdef0123456789abcdef01234567。"),
+            "0123456789abcdef0123456789abcdef01234567"
+        )
+        XCTAssertNil(AppUpdater.revision(in: "没有提交信息"))
+    }
 }
