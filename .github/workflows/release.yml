@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build and test
         run: |
@@ -31,15 +31,16 @@ jobs:
         run: |
           APP_REVISION="$GITHUB_SHA" ./scripts/build-app.sh
           # GitHub Release assets must be single files. Keep the bundle uncompressed
-          # in a tar stream while retaining the requested CodexCredit.app asset name.
-          tar -cf CodexCredit.app -C dist CodexCredit.app
+          # GitHub rejects the .app extension for Release assets. Use an
+          # uncompressed tar stream and expose CodexCredit.app as its display label.
+          tar -cf CodexCredit.app.tar -C dist CodexCredit.app
 
       - name: Verify package
         run: |
           test -x dist/CodexCredit.app/Contents/MacOS/CodexCredit
           test -f dist/CodexCredit.app/Contents/Info.plist
-          test -f CodexCredit.app
-          tar -tf CodexCredit.app | grep -qx "CodexCredit.app/Contents/MacOS/CodexCredit"
+          test -f CodexCredit.app.tar
+          tar -tf CodexCredit.app.tar | grep -qx "CodexCredit.app/Contents/MacOS/CodexCredit"
 
       - name: Create or update autobuild Release
         env:
@@ -63,4 +64,21 @@ jobs:
               --notes "自动构建自提交 ${COMMIT_SHA}。"
           fi
 
-          gh release upload "$RELEASE_TAG" CodexCredit.app --clobber
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+          asset_ids="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
+            --jq '.[] | select(.name == "CodexCredit.app.tar" or .name == "CodexCredit.app") | .id' || true)"
+          for asset_id in $asset_ids; do
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+          done
+
+          curl --fail --silent --show-error \
+            -X POST \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=CodexCredit.app.tar&label=CodexCredit.app" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/x-tar" \
+            --data-binary @CodexCredit.app.tar
+
+          asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
+            --jq '[.[] | select(.name == "CodexCredit.app.tar" and .label == "CodexCredit.app")] | length')"
+          [[ "$asset_count" == "1" ]]

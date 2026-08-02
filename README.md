@@ -51,7 +51,7 @@ open dist/CodexCredit.app
 
 每次向 GitHub 推送提交后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `CodexCredit.app`，并更新一个名为 **autobuild** 的正式 Release。
 
-Release 使用固定的 `autobuild` 标签和标题，附件名为 `CodexCredit.app`。后续提交会自动将标签指向最新提交并覆盖旧附件，不需要手动创建 Release 或上传文件。由于 GitHub Release 附件必须是单个文件，工作流使用未压缩的 tar 数据保存 App bundle，下载后的更新流程会自动处理。
+Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `CodexCredit.app`。后续提交会自动将标签指向最新提交并覆盖旧附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名为 `CodexCredit.app.tar`，但显示标签仍为 `CodexCredit.app`；这是未压缩的 tar 数据，下载后的更新流程会自动处理。
 
 工作流定义位于 `.github/workflows/release.yml`。
 
@@ -70,7 +70,7 @@ Release 使用固定的 `autobuild` 标签和标题，附件名为 `CodexCredit.
 2. Codex CLI 可执行文件位于 `PATH`、`CODEX_BIN` 或常见安装路径（包括 Homebrew、npm、Volta 和 asdf 路径）。
 3. `codex app-server --stdio` 可以正常启动；终端中可用该命令进行诊断。
 
-更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新只接受仓库发布的 `CodexCredit.app` 附件，不会打开网页安装。
+更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新只接受仓库发布的 `CodexCredit.app`（底层为 `.tar`）附件，不会打开网页安装。
 
 ## 开发与验证
 

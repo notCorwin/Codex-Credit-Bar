@@ -50,6 +50,7 @@ final class AppUpdater {
 
     private struct Asset: Decodable {
         let name: String
+        let label: String?
         let browserDownloadUrl: URL
     }
 
@@ -160,7 +161,9 @@ final class AppUpdater {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let release = try decoder.decode(Release.self, from: data)
-            guard let asset = release.assets.first(where: { $0.name == "CodexCredit.app" }) else {
+            guard let asset = release.assets.first(where: {
+                $0.label == "CodexCredit.app" || $0.name == "CodexCredit.app.tar"
+            }) else {
                 return .failure(AppUpdateError.assetMissing)
             }
 
