@@ -58,7 +58,9 @@ final class CodexAppServerClient {
         environment["TERM"] = "dumb"
         environment["NO_COLOR"] = "1"
         environment["HOME"] = NSHomeDirectory()
+        environment["CODEX_HOME"] = environment["CODEX_HOME"] ?? "\(NSHomeDirectory())/.codex"
         environment["PATH"] = Self.processPath(environment["PATH"])
+        process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         process.environment = environment
 
         inputPipe = input
@@ -145,9 +147,11 @@ final class CodexAppServerClient {
                     let response = try JSONDecoder().decode(RateLimitsResponse.self, from: data)
                     finish(completion, with: .success(response))
                 } catch {
+                    cleanupProcess(terminate: true)
                     finish(completion, with: .failure(CodexClientError.invalidResponse(error.localizedDescription)))
                 }
             case .failure(let error):
+                cleanupProcess(terminate: true)
                 finish(completion, with: .failure(error))
             }
         }
@@ -303,7 +307,7 @@ final class CodexAppServerClient {
             .split(separator: ":", omittingEmptySubsequences: true)
             .map { URL(fileURLWithPath: String($0)).appendingPathComponent("codex").path }
         let home = NSHomeDirectory()
-        let candidates = (configured.map { [$0] } ?? []) + pathCandidates + [
+        let installedCandidates = [
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
             "\(home)/.local/bin/codex",
@@ -313,6 +317,7 @@ final class CodexAppServerClient {
             "\(home)/.volta/bin/codex",
             "\(home)/.asdf/shims/codex"
         ]
+        let candidates = (configured.map { [$0] } ?? []) + installedCandidates + pathCandidates
 
         var seen = Set<String>()
         for candidate in candidates {
