@@ -8,8 +8,6 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
-    private let showsStatusItemBranding = false
-
     private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
     private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -22,9 +20,9 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         action: #selector(refreshNow),
         keyEquivalent: "r"
     )
-    private lazy var openCodexItem = NSMenuItem(
-        title: "打开 Codex",
-        action: #selector(openCodex),
+    private lazy var openChatGPTItem = NSMenuItem(
+        title: "打开 ChatGPT",
+        action: #selector(openChatGPT),
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(
@@ -81,9 +79,11 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         }
     }
 
-    @objc private func openCodex() {
-        guard let url = URL(string: "https://chatgpt.com/codex") else { return }
-        NSWorkspace.shared.open(url)
+    @objc private func openChatGPT() {
+        guard let appURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.openai.chat"
+        ) else { return }
+        NSWorkspace.shared.open(appURL)
     }
 
     @objc private func quit() {
@@ -94,10 +94,6 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
         button.title = statusTitle(for: nil)
-        button.image = showsStatusItemBranding
-            ? NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Codex")
-            : nil
-        button.imagePosition = .imageLeading
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         button.toolTip = "Codex 剩余额度"
         button.setAccessibilityLabel("Codex 剩余额度")
@@ -126,12 +122,12 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         menu.addItem(errorItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(refreshItem)
-        menu.addItem(openCodexItem)
+        menu.addItem(openChatGPTItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         refreshItem.target = self
-        openCodexItem.target = self
+        openChatGPTItem.target = self
         quitItem.target = self
     }
 
@@ -204,7 +200,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     private func renderErrorWithoutQuota() {
-        statusItem.button?.title = showsStatusItemBranding ? "Codex !" : "!"
+        statusItem.button?.title = "!"
         headerItem.title = "Codex 剩余额度"
         summaryItem.title = lastError?.localizedDescription ?? "无法读取额度"
         primaryItem.isHidden = true
@@ -217,7 +213,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private func statusTitle(for quota: CodexQuota?) -> String {
         QuotaFormatter.statusTitle(
             for: quota,
-            includingProductName: showsStatusItemBranding
+            includingProductName: false
         )
     }
 

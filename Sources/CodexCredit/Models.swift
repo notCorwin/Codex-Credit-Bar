@@ -16,14 +16,10 @@ struct RateLimitsResponse: Decodable {
 
 struct RateLimitSnapshot: Decodable, Equatable {
     let credits: CreditsSnapshot?
-    let individualLimit: SpendControlLimitSnapshot?
     let limitId: String?
-    let limitName: String?
     let planType: String?
     let primary: RateLimitWindow?
     let secondary: RateLimitWindow?
-    let rateLimitReachedType: String?
-    let spendControlReached: Bool?
 }
 
 struct RateLimitWindow: Decodable, Equatable {
@@ -40,13 +36,6 @@ struct CreditsSnapshot: Decodable, Equatable {
     let balance: String?
     let hasCredits: Bool
     let unlimited: Bool
-}
-
-struct SpendControlLimitSnapshot: Decodable, Equatable {
-    let limit: String
-    let remainingPercent: Int
-    let resetsAt: Int64
-    let used: String
 }
 
 struct RateLimitResetCreditsSummary: Decodable, Equatable {
