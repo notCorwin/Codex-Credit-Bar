@@ -2,6 +2,10 @@
 
 Codex Credit 是一个原生 macOS 菜单栏应用，用于查看 Codex CLI 账户的实时额度，并在需要时打开本机已安装的 ChatGPT App。
 
+## 应用效果
+
+![Codex Credit 菜单栏效果](Assets/CodexCreditPreview.png)
+
 ## 功能
 
 - 在菜单栏显示综合剩余额度百分比。
