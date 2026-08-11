@@ -6,7 +6,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
-    private var popupRefreshTimer: Timer?
+    private var isPopupVisible = false
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
@@ -58,27 +58,17 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
 
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
-        popupRefreshTimer?.invalidate()
+        isPopupVisible = false
         client.stop()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        isPopupVisible = true
         refreshNow()
-        popupRefreshTimer?.invalidate()
-        let timer = Timer(
-            timeInterval: 1,
-            target: self,
-            selector: #selector(refreshNow),
-            userInfo: nil,
-            repeats: true
-        )
-        popupRefreshTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        popupRefreshTimer?.invalidate()
-        popupRefreshTimer = nil
+        isPopupVisible = false
     }
 
     @objc private func refreshNow() {
@@ -111,6 +101,10 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
                         self?.refreshNowWithRetry(allowingRetry: false)
                     }
                 }
+            }
+
+            if isPopupVisible {
+                refreshNowWithRetry(allowingRetry: false)
             }
         }
     }
