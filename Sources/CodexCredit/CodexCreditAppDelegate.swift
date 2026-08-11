@@ -266,6 +266,8 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private func checkForUpdates(silently: Bool) {
         guard !isCheckingForUpdate else { return }
         isCheckingForUpdate = true
+        checkForUpdatesItem.title = "检查更新…"
+        checkForUpdatesItem.attributedTitle = nil
         checkForUpdatesItem.isEnabled = false
         updater.check { [weak self] result in
             guard let self else { return }
@@ -275,13 +277,25 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
             switch result {
             case .success(let update):
                 guard let update else {
+                    checkForUpdatesItem.title = "已是最新版本"
+                    checkForUpdatesItem.attributedTitle = NSAttributedString(
+                        string: "已是最新版本",
+                        attributes: [.foregroundColor: NSColor.disabledControlTextColor]
+                    )
                     if !silently {
                         showAlert(title: "已是最新版本", message: "当前没有可用更新。")
                     }
                     return
                 }
+                let revision = update.revision == "unknown"
+                    ? ""
+                    : "-\(update.revision.prefix(6))"
+                checkForUpdatesItem.title = "有新版本可用\(revision)"
+                checkForUpdatesItem.attributedTitle = nil
                 presentUpdate(update)
             case .failure(let error):
+                checkForUpdatesItem.title = "检查更新…"
+                checkForUpdatesItem.attributedTitle = nil
                 if !silently {
                     showAlert(title: "检查更新失败", message: error.localizedDescription)
                 }
