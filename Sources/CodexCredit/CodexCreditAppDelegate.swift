@@ -18,11 +18,6 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private let creditsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let updatedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private lazy var refreshItem = NSMenuItem(
-        title: "立即刷新",
-        action: #selector(refreshNow),
-        keyEquivalent: "r"
-    )
     private lazy var openChatGPTItem = NSMenuItem(
         title: "打开 ChatGPT",
         action: #selector(openChatGPT),
@@ -78,7 +73,6 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
     private func refreshNowWithRetry(allowingRetry: Bool) {
         guard !isRefreshing else { return }
         isRefreshing = true
-        refreshItem.isEnabled = false
         if quota == nil {
             renderLoading()
         }
@@ -86,7 +80,6 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         client.fetchRateLimits { [weak self] result in
             guard let self else { return }
             isRefreshing = false
-            refreshItem.isEnabled = true
 
             switch result {
             case .success(let response):
@@ -165,13 +158,11 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         menu.addItem(updatedItem)
         menu.addItem(errorItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(refreshItem)
         menu.addItem(openChatGPTItem)
         menu.addItem(checkForUpdatesItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
-        refreshItem.target = self
         openChatGPTItem.target = self
         checkForUpdatesItem.target = self
         quitItem.target = self

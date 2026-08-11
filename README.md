@@ -64,7 +64,6 @@ Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex
 
 应用启动后会显示在 macOS 菜单栏。点击菜单栏中的额度数字即可查看详情：
 
-- **立即刷新**：立即请求最新额度。
 - **打开 ChatGPT**：启动本机已安装的 ChatGPT App；未安装或启动失败时显示提示，不会打开网页。
 - **检查更新…**：检查 GitHub 上的 `autobuild` Release，有新版本时确认下载并安装。
 - **退出 Codex Credit**：退出应用。
