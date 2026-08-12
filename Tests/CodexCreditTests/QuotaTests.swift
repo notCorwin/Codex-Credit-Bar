@@ -72,6 +72,69 @@ final class QuotaTests: XCTestCase {
         )
     }
 
+    func testWeeklyExhaustionShowsExtraCredits() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 10, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertTrue(quota.shouldDisplayExtraCredits)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "12.50"
+        )
+        XCTAssertEqual(QuotaFormatter.summary(for: quota), "可使用额外额度")
+    }
+
+    func testWeeklyExhaustionWithoutExtraCreditsKeepsZeroPercent() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 10, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertFalse(quota.shouldDisplayExtraCredits)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "0%"
+        )
+        XCTAssertEqual(QuotaFormatter.summary(for: quota), "综合剩余 0%")
+    }
+
+    func testShortWindowExhaustionDoesNotReplacePercentageWhenWeeklyQuotaRemains() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertFalse(quota.shouldDisplayExtraCredits)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "0%"
+        )
+        XCTAssertEqual(QuotaFormatter.summary(for: quota), "综合剩余 0%")
+    }
+
     func testConfiguredCodexPathTakesPriority() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("CodexCreditTests-\(UUID().uuidString)")

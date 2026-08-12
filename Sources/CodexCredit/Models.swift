@@ -43,6 +43,8 @@ struct RateLimitResetCreditsSummary: Decodable, Equatable {
 }
 
 struct CodexQuota: Equatable {
+    private static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
+
     let snapshot: RateLimitSnapshot
     let availableResetCreditCount: Int
     let fetchedAt: Date
@@ -61,6 +63,12 @@ struct CodexQuota: Equatable {
         snapshot.secondary
     }
 
+    var weeklyWindow: RateLimitWindow? {
+        [primary, secondary]
+            .compactMap { $0 }
+            .first { $0.windowDurationMins == Self.weeklyWindowDurationMins }
+    }
+
     var credits: CreditsSnapshot? {
         snapshot.credits
     }
@@ -69,6 +77,10 @@ struct CodexQuota: Equatable {
         [primary, secondary]
             .compactMap { $0?.remainingPercent }
             .min()
+    }
+
+    var shouldDisplayExtraCredits: Bool {
+        weeklyWindow?.remainingPercent == 0 && credits?.hasCredits == true
     }
 
     var planName: String {

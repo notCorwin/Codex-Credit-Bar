@@ -10,6 +10,8 @@ enum QuotaFormatter {
             value = "…"
         } else if quota?.credits?.unlimited == true {
             value = "∞"
+        } else if let quota, quota.shouldDisplayExtraCredits {
+            value = extraCreditsBalance(for: quota.credits)
         } else if let remaining = quota?.remainingPercent {
             value = "\(remaining)%"
         } else {
@@ -22,6 +24,9 @@ enum QuotaFormatter {
         if quota.credits?.unlimited == true {
             return "无限额度"
         }
+        if quota.shouldDisplayExtraCredits {
+            return "可使用额外额度"
+        }
         if let remaining = quota.remainingPercent {
             return "综合剩余 \(remaining)%"
         }
@@ -29,6 +34,13 @@ enum QuotaFormatter {
             return "可使用额外额度"
         }
         return "暂无额度信息"
+    }
+
+    private static func extraCreditsBalance(for credits: CreditsSnapshot?) -> String {
+        guard let balance = credits?.balance, !balance.isEmpty else {
+            return "—"
+        }
+        return balance
     }
 
     static func windowDescription(
