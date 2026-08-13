@@ -40,7 +40,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         configureMenu()
         refreshNow()
         refreshTimer = Timer.scheduledTimer(
-            timeInterval: 60,
+            timeInterval: 10,
             target: self,
             selector: #selector(refreshNow),
             userInfo: nil,
