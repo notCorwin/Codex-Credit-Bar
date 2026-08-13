@@ -45,6 +45,7 @@ final class AppUpdater {
     private struct Release: Decodable {
         let name: String?
         let body: String?
+        let targetCommitish: String?
         let assets: [Asset]
     }
 
@@ -54,8 +55,8 @@ final class AppUpdater {
         let browserDownloadUrl: URL
     }
 
-    private static let releaseURL = URL(
-        string: "https://api.github.com/repos/notCorwin/codex-credit/releases/tags/autobuild"
+    static let releaseAPIURL = URL(
+        string: "https://api.github.com/repos/notCorwin/codex-menubar-credit/releases/tags/autobuild"
     )!
     private let session: URLSession
     private var task: URLSessionTask?
@@ -78,8 +79,10 @@ final class AppUpdater {
             return
         }
 
-        var request = URLRequest(url: Self.releaseURL)
+        var request = URLRequest(url: Self.releaseAPIURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("CodexMenuBarCredit", forHTTPHeaderField: "User-Agent")
         let task = session.dataTask(with: request) { [weak self] data, response, error in
             let result: Result<AppUpdate?, Error>
@@ -157,6 +160,11 @@ final class AppUpdater {
     }
 
     private static func parse(data: Data) -> Result<AppUpdate?, Error> {
+        let currentRevision = Bundle.main.object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String
+        return parse(data: data, currentRevision: currentRevision)
+    }
+
+    static func parse(data: Data, currentRevision: String?) -> Result<AppUpdate?, Error> {
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -167,15 +175,15 @@ final class AppUpdater {
                 return .failure(AppUpdateError.assetMissing)
             }
 
-            let currentRevision = (Bundle.main.object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String)
-                ?? "development"
-            let revision = revision(in: release.body) ?? "unknown"
-            if revision != "unknown", revision == currentRevision.lowercased() {
+            let releaseRevision = revision(in: release.targetCommitish)
+                ?? revision(in: release.body)
+                ?? "unknown"
+            if releaseRevision != "unknown", releaseRevision == revision(in: currentRevision) {
                 return .success(nil)
             }
             return .success(AppUpdate(
                 name: release.name ?? "autobuild",
-                revision: revision,
+                revision: releaseRevision,
                 assetURL: asset.browserDownloadUrl
             ))
         } catch {

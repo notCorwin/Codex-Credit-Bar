@@ -162,6 +162,66 @@ final class QuotaTests: XCTestCase {
         XCTAssertNil(AppUpdater.revision(in: "没有提交信息"))
     }
 
+    func testUpdateCheckUsesCanonicalReleaseRepository() {
+        XCTAssertEqual(
+            AppUpdater.releaseAPIURL.absoluteString,
+            "https://api.github.com/repos/notCorwin/codex-menubar-credit/releases/tags/autobuild"
+        )
+    }
+
+    func testReleaseTargetCommitIsUsedWhenReleaseNotesHaveNoRevision() throws {
+        let revision = "0123456789abcdef0123456789abcdef01234567"
+        let json = """
+        {
+          "name": "autobuild",
+          "body": "",
+          "target_commitish": "\(revision)",
+          "assets": [
+            {
+              "name": "CodexMenuBarCredit.app.tar",
+              "label": "CodexMenuBarCredit.app",
+              "browser_download_url": "https://example.com/CodexMenuBarCredit.app.tar"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let result = AppUpdater.parse(data: json, currentRevision: revision)
+
+        guard case .success(let update) = result else {
+            XCTFail("Expected the release to be parsed successfully")
+            return
+        }
+        XCTAssertNil(update)
+    }
+
+    func testReleaseWithDifferentTargetCommitIsAvailable() throws {
+        let currentRevision = "0123456789abcdef0123456789abcdef01234567"
+        let releaseRevision = "fedcba9876543210fedcba9876543210fedcba98"
+        let json = """
+        {
+          "name": "autobuild",
+          "body": "没有提交信息",
+          "target_commitish": "\(releaseRevision)",
+          "assets": [
+            {
+              "name": "CodexMenuBarCredit.app.tar",
+              "label": "CodexMenuBarCredit.app",
+              "browser_download_url": "https://example.com/CodexMenuBarCredit.app.tar"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let result = AppUpdater.parse(data: json, currentRevision: currentRevision)
+
+        guard case .success(let update) = result else {
+            XCTFail("Expected the release to be parsed successfully")
+            return
+        }
+        XCTAssertEqual(update?.revision, releaseRevision)
+    }
+
     func testProxyIsPassedToCodexEnvironment() throws {
         let proxy = try XCTUnwrap(URL(string: "http://127.0.0.1:7890"))
         let environment = CodexAppServerClient.applying(proxyURL: proxy, to: ["HOME": "/tmp/home"])

@@ -1,16 +1,35 @@
 import AppKit
 
 final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private enum UpdateStatus {
+        case checking
+        case latest
+        case available(String)
+
+        var title: String {
+            switch self {
+            case .checking:
+                return "正在检查..."
+            case .latest:
+                return "已是最新版本"
+            case .available(let revision):
+                return "有最新版本 - \(revision)"
+            }
+        }
+    }
+
     private let client = CodexAppServerClient()
     private let updater = AppUpdater()
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
+    private var updateCheckTimer: Timer?
     private var isPopupVisible = false
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
     private var isCheckingForUpdate = false
+    private var lastResolvedUpdateStatus: UpdateStatus = .checking
     private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
     private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -24,7 +43,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         keyEquivalent: ""
     )
     private lazy var checkForUpdatesItem = NSMenuItem(
-        title: "检查更新…",
+        title: UpdateStatus.checking.title,
         action: #selector(checkForUpdatesNow),
         keyEquivalent: ""
     )
@@ -46,13 +65,18 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             userInfo: nil,
             repeats: true
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.checkForUpdates(silently: true)
-        }
+        updateCheckTimer = Timer.scheduledTimer(
+            timeInterval: 60 * 60,
+            target: self,
+            selector: #selector(checkForUpdatesAutomatically),
+            userInfo: nil,
+            repeats: true
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
+        updateCheckTimer?.invalidate()
         isPopupVisible = false
         client.stop()
     }
@@ -60,6 +84,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     func menuWillOpen(_ menu: NSMenu) {
         isPopupVisible = true
         refreshNow()
+        checkForUpdates(silently: true)
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -121,6 +146,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     @objc private func checkForUpdatesNow() {
         checkForUpdates(silently: false)
+    }
+
+    @objc private func checkForUpdatesAutomatically() {
+        checkForUpdates(silently: true)
     }
 
     @objc private func quit() {
@@ -266,8 +295,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private func checkForUpdates(silently: Bool) {
         guard !isCheckingForUpdate else { return }
         isCheckingForUpdate = true
-        checkForUpdatesItem.title = "检查更新…"
-        checkForUpdatesItem.attributedTitle = nil
+        applyUpdateStatus(.checking)
         checkForUpdatesItem.isEnabled = false
         updater.check { [weak self] result in
             guard let self else { return }
@@ -277,30 +305,30 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             switch result {
             case .success(let update):
                 guard let update else {
-                    checkForUpdatesItem.title = "已是最新版本"
-                    checkForUpdatesItem.attributedTitle = NSAttributedString(
-                        string: "已是最新版本",
-                        attributes: [.foregroundColor: NSColor.disabledControlTextColor]
-                    )
+                    self.lastResolvedUpdateStatus = .latest
+                    self.applyUpdateStatus(.latest)
                     if !silently {
                         showAlert(title: "已是最新版本", message: "当前没有可用更新。")
                     }
                     return
                 }
-                let revision = update.revision == "unknown"
-                    ? ""
-                    : "-\(update.revision.prefix(6))"
-                checkForUpdatesItem.title = "有新版本可用\(revision)"
-                checkForUpdatesItem.attributedTitle = nil
+                let revision = String(update.revision.prefix(6))
+                let status = UpdateStatus.available(revision)
+                self.lastResolvedUpdateStatus = status
+                self.applyUpdateStatus(status)
                 presentUpdate(update)
             case .failure(let error):
-                checkForUpdatesItem.title = "检查更新…"
-                checkForUpdatesItem.attributedTitle = nil
+                applyUpdateStatus(lastResolvedUpdateStatus)
                 if !silently {
                     showAlert(title: "检查更新失败", message: error.localizedDescription)
                 }
             }
         }
+    }
+
+    private func applyUpdateStatus(_ status: UpdateStatus) {
+        checkForUpdatesItem.title = status.title
+        checkForUpdatesItem.attributedTitle = nil
     }
 
     private func presentUpdate(_ update: AppUpdate) {
