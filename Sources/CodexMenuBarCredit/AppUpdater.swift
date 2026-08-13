@@ -28,7 +28,7 @@ enum AppUpdateError: LocalizedError {
         case .invalidResponse:
             return "GitHub 返回的版本信息无效。"
         case .assetMissing:
-            return "最新 Release 没有 CodexMenuBarCredit.app 附件。"
+            return "最新 Release 没有 Codex MenuBar Credit.app 附件。"
         case .downloadFailed(let message):
             return "更新下载失败：\(message)"
         case .invalidPackage:
@@ -42,6 +42,10 @@ enum AppUpdateError: LocalizedError {
 }
 
 final class AppUpdater {
+    static let applicationBundleName = "Codex MenuBar Credit.app"
+    private static let legacyApplicationBundleName = "CodexMenuBarCredit.app"
+    private static let releaseAssetName = "CodexMenuBarCredit.app.tar"
+
     private struct Release: Decodable {
         let name: String?
         let body: String?
@@ -170,7 +174,9 @@ final class AppUpdater {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let release = try decoder.decode(Release.self, from: data)
             guard let asset = release.assets.first(where: {
-                $0.label == "CodexMenuBarCredit.app" || $0.name == "CodexMenuBarCredit.app.tar"
+                $0.label == Self.applicationBundleName
+                    || $0.label == Self.legacyApplicationBundleName
+                    || $0.name == Self.releaseAssetName
             }) else {
                 return .failure(AppUpdateError.assetMissing)
             }
@@ -221,8 +227,14 @@ final class AppUpdater {
         try fileManager.createDirectory(at: extractedDirectory, withIntermediateDirectories: true)
         try runTar(arguments: ["-xf", downloadedFile.path, "-C", extractedDirectory.path])
 
-        let extractedApp = extractedDirectory.appendingPathComponent("CodexMenuBarCredit.app", isDirectory: true)
-        guard let bundle = Bundle(url: extractedApp),
+        let extractedApp = [
+            Self.applicationBundleName,
+            Self.legacyApplicationBundleName
+        ]
+        .map { extractedDirectory.appendingPathComponent($0, isDirectory: true) }
+        .first { fileManager.fileExists(atPath: $0.path) }
+        guard let extractedApp,
+              let bundle = Bundle(url: extractedApp),
               bundle.bundleIdentifier == "com.codexmenubarcredit.menu-bar",
               let executable = bundle.executableURL,
               fileManager.isExecutableFile(atPath: executable.path) else {
@@ -233,22 +245,40 @@ final class AppUpdater {
         guard currentApp.pathExtension == "app" else {
             throw AppUpdateError.notPackaged
         }
+        let targetApp = currentApp.lastPathComponent == Self.applicationBundleName
+            ? currentApp
+            : currentApp.deletingLastPathComponent()
+                .appendingPathComponent(Self.applicationBundleName, isDirectory: true)
+        let isRenamingLegacyBundle = targetApp.path != currentApp.path
+        if isRenamingLegacyBundle, fileManager.fileExists(atPath: targetApp.path) {
+            throw AppUpdateError.installFailed("目标位置已存在 Codex MenuBar Credit.app。")
+        }
         let stagedApp = currentApp.deletingLastPathComponent()
             .appendingPathComponent(".CodexMenuBarCredit-update-\(UUID().uuidString).app", isDirectory: true)
+        var createdTarget = false
         do {
             try fileManager.copyItem(at: extractedApp, to: stagedApp)
-            _ = try fileManager.replaceItemAt(
-                currentApp,
-                withItemAt: stagedApp,
-                backupItemName: nil,
-                options: []
-            )
+            if !isRenamingLegacyBundle {
+                _ = try fileManager.replaceItemAt(
+                    currentApp,
+                    withItemAt: stagedApp,
+                    backupItemName: nil,
+                    options: []
+                )
+            } else {
+                try fileManager.moveItem(at: stagedApp, to: targetApp)
+                createdTarget = true
+                try fileManager.removeItem(at: currentApp)
+            }
         } catch {
             try? fileManager.removeItem(at: stagedApp)
+            if createdTarget {
+                try? fileManager.removeItem(at: targetApp)
+            }
             throw AppUpdateError.installFailed(error.localizedDescription)
         }
 
-        try relauncher(for: currentApp)
+        try relauncher(for: targetApp)
     }
 
     private func runTar(arguments: [String]) throws {
@@ -271,7 +301,7 @@ final class AppUpdater {
     private func relauncher(for appURL: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "sleep 1; open \"$1\"", "CodexMenuBarCredit updater", appURL.path]
+        process.arguments = ["-c", "sleep 1; open \"$1\"", "Codex MenuBar Credit updater", appURL.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do {

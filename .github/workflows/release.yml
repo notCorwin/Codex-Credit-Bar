@@ -32,15 +32,15 @@ jobs:
           APP_REVISION="$GITHUB_SHA" ./scripts/build-app.sh
           # GitHub Release assets must be single files. Keep the bundle uncompressed
           # GitHub rejects the .app extension for Release assets. Use an
-          # uncompressed tar stream and expose CodexMenuBarCredit.app as its display label.
-          tar -cf CodexMenuBarCredit.app.tar -C dist CodexMenuBarCredit.app
+          # uncompressed tar stream and preserve the spaced app bundle name inside it.
+          tar -cf CodexMenuBarCredit.app.tar -C dist "Codex MenuBar Credit.app"
 
       - name: Verify package
         run: |
-          test -x dist/CodexMenuBarCredit.app/Contents/MacOS/CodexMenuBarCredit
-          test -f dist/CodexMenuBarCredit.app/Contents/Info.plist
+          test -x "dist/Codex MenuBar Credit.app/Contents/MacOS/CodexMenuBarCredit"
+          test -f "dist/Codex MenuBar Credit.app/Contents/Info.plist"
           test -f CodexMenuBarCredit.app.tar
-          tar -tf CodexMenuBarCredit.app.tar | grep -qx "CodexMenuBarCredit.app/Contents/MacOS/CodexMenuBarCredit"
+          tar -tf CodexMenuBarCredit.app.tar | grep -qx "Codex MenuBar Credit.app/Contents/MacOS/CodexMenuBarCredit"
 
       - name: Replace autobuild Release
         env:
@@ -83,12 +83,12 @@ jobs:
 
           curl --fail --silent --show-error \
             -X POST \
-            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=CodexMenuBarCredit.app.tar&label=CodexMenuBarCredit.app" \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=CodexMenuBarCredit.app.tar&label=Codex%20MenuBar%20Credit.app" \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/x-tar" \
             --data-binary @CodexMenuBarCredit.app.tar
 
           asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
-            --jq '[.[] | select(.name == "CodexMenuBarCredit.app.tar" and .label == "CodexMenuBarCredit.app")] | length')"
+            --jq '[.[] | select(.name == "CodexMenuBarCredit.app.tar" and .label == "Codex MenuBar Credit.app")] | length')"
           [[ "$asset_count" == "1" ]]
