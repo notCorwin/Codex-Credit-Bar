@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你为 Codex Credit 提交改进。
+感谢你为 Codex MenuBar Credit 提交改进。
 
 ## 开始之前
 

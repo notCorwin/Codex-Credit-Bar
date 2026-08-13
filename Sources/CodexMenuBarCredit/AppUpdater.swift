@@ -20,7 +20,7 @@ enum AppUpdateError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notPackaged:
-            return "更新功能只能从已打包的 Codex Credit App 运行。"
+            return "更新功能只能从已打包的 Codex MenuBar Credit App 运行。"
         case .noRelease:
             return "GitHub 上暂无可用的 autobuild Release。"
         case .network(let message):
@@ -28,11 +28,11 @@ enum AppUpdateError: LocalizedError {
         case .invalidResponse:
             return "GitHub 返回的版本信息无效。"
         case .assetMissing:
-            return "最新 Release 没有 CodexCredit.app 附件。"
+            return "最新 Release 没有 CodexMenuBarCredit.app 附件。"
         case .downloadFailed(let message):
             return "更新下载失败：\(message)"
         case .invalidPackage:
-            return "下载的更新包不是有效的 Codex Credit App。"
+            return "下载的更新包不是有效的 Codex MenuBar Credit App。"
         case .installFailed(let message):
             return "更新安装失败：\(message)"
         case .busy:
@@ -80,7 +80,7 @@ final class AppUpdater {
 
         var request = URLRequest(url: Self.releaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("CodexCredit", forHTTPHeaderField: "User-Agent")
+        request.setValue("CodexMenuBarCredit", forHTTPHeaderField: "User-Agent")
         let task = session.dataTask(with: request) { [weak self] data, response, error in
             let result: Result<AppUpdate?, Error>
             if let error {
@@ -123,7 +123,7 @@ final class AppUpdater {
 
         var request = URLRequest(url: update.assetURL)
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-        request.setValue("CodexCredit", forHTTPHeaderField: "User-Agent")
+        request.setValue("CodexMenuBarCredit", forHTTPHeaderField: "User-Agent")
         let task = session.downloadTask(with: request) { [weak self] location, response, error in
             guard let self else { return }
             if let error {
@@ -162,7 +162,7 @@ final class AppUpdater {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let release = try decoder.decode(Release.self, from: data)
             guard let asset = release.assets.first(where: {
-                $0.label == "CodexCredit.app" || $0.name == "CodexCredit.app.tar"
+                $0.label == "CodexMenuBarCredit.app" || $0.name == "CodexMenuBarCredit.app.tar"
             }) else {
                 return .failure(AppUpdateError.assetMissing)
             }
@@ -206,16 +206,16 @@ final class AppUpdater {
     private func install(downloadedFile: URL) throws {
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("CodexCredit-update-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CodexMenuBarCredit-update-\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: temporaryDirectory) }
 
         let extractedDirectory = temporaryDirectory.appendingPathComponent("Extracted", isDirectory: true)
         try fileManager.createDirectory(at: extractedDirectory, withIntermediateDirectories: true)
         try runTar(arguments: ["-xf", downloadedFile.path, "-C", extractedDirectory.path])
 
-        let extractedApp = extractedDirectory.appendingPathComponent("CodexCredit.app", isDirectory: true)
+        let extractedApp = extractedDirectory.appendingPathComponent("CodexMenuBarCredit.app", isDirectory: true)
         guard let bundle = Bundle(url: extractedApp),
-              bundle.bundleIdentifier == "com.codexcredit.menu-bar",
+              bundle.bundleIdentifier == "com.codexmenubarcredit.menu-bar",
               let executable = bundle.executableURL,
               fileManager.isExecutableFile(atPath: executable.path) else {
             throw AppUpdateError.invalidPackage
@@ -226,7 +226,7 @@ final class AppUpdater {
             throw AppUpdateError.notPackaged
         }
         let stagedApp = currentApp.deletingLastPathComponent()
-            .appendingPathComponent(".CodexCredit-update-\(UUID().uuidString).app", isDirectory: true)
+            .appendingPathComponent(".CodexMenuBarCredit-update-\(UUID().uuidString).app", isDirectory: true)
         do {
             try fileManager.copyItem(at: extractedApp, to: stagedApp)
             _ = try fileManager.replaceItemAt(
@@ -263,7 +263,7 @@ final class AppUpdater {
     private func relauncher(for appURL: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "sleep 1; open \"$1\"", "CodexCredit updater", appURL.path]
+        process.arguments = ["-c", "sleep 1; open \"$1\"", "CodexMenuBarCredit updater", appURL.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do {

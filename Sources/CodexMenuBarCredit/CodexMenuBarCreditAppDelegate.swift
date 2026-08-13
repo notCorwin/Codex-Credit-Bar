@@ -1,6 +1,6 @@
 import AppKit
 
-final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let client = CodexAppServerClient()
     private let updater = AppUpdater()
     private let menu = NSMenu()
@@ -29,7 +29,7 @@ final class CodexCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDeleg
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(
-        title: "退出 Codex Credit",
+        title: "退出 Codex MenuBar Credit",
         action: #selector(quit),
         keyEquivalent: "q"
     )

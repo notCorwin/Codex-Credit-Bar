@@ -4,7 +4,7 @@ import CFNetwork
 final class CodexAppServerClient {
     typealias Completion = (Result<RateLimitsResponse, Error>) -> Void
 
-    private let stateQueue = DispatchQueue(label: "com.codexcredit.app-server")
+    private let stateQueue = DispatchQueue(label: "com.codexmenubarcredit.app-server")
     private var process: Process?
     private var inputPipe: Pipe?
     private var outputPipe: Pipe?
@@ -115,8 +115,8 @@ final class CodexAppServerClient {
     private func sendInitialize() {
         let params: [String: Any] = [
             "clientInfo": [
-                "name": "codex-credit",
-                "title": "Codex Credit",
+                "name": "codex-menubar-credit",
+                "title": "Codex MenuBar Credit",
                 "version": "1.0.0"
             ],
             "capabilities": [String: Any]()

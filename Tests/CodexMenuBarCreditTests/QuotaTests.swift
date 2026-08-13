@@ -1,5 +1,5 @@
 import XCTest
-@testable import CodexCredit
+@testable import CodexMenuBarCredit
 
 final class QuotaTests: XCTestCase {
     func testCodexBucketWinsOverLegacyBucket() throws {
@@ -137,7 +137,7 @@ final class QuotaTests: XCTestCase {
 
     func testConfiguredCodexPathTakesPriority() throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CodexCreditTests-\(UUID().uuidString)")
+            .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)")
         let executable = directory.appendingPathComponent("codex")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

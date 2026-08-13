@@ -2,22 +2,22 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodexCredit",
+    name: "CodexMenuBarCredit",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "CodexCredit", targets: ["CodexCredit"])
+        .executable(name: "CodexMenuBarCredit", targets: ["CodexMenuBarCredit"])
     ],
     targets: [
         .executableTarget(
-            name: "CodexCredit",
-            path: "Sources/CodexCredit"
+            name: "CodexMenuBarCredit",
+            path: "Sources/CodexMenuBarCredit"
         ),
         .testTarget(
-            name: "CodexCreditTests",
-            dependencies: ["CodexCredit"],
-            path: "Tests/CodexCreditTests"
+            name: "CodexMenuBarCreditTests",
+            dependencies: ["CodexMenuBarCredit"],
+            path: "Tests/CodexMenuBarCreditTests"
         )
     ]
 )
