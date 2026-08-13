@@ -56,7 +56,7 @@ open "dist/Codex MenuBar Credit.app"
 
 每次向 GitHub 推送提交后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `Codex MenuBar Credit.app`，并更新一个名为 **autobuild** 的正式 Release。
 
-Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex MenuBar Credit.app`。每次提交都会删除并重新创建该 Release，将标签指向最新提交并刷新发布时间，不会保留旧 Release 或附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名仍为 `CodexMenuBarCredit.app.tar`，但 tar 内部的 App 包目录名为 `Codex MenuBar Credit.app`；这是未压缩的 tar 数据，下载后的更新流程会自动处理。
+Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex MenuBar Credit.app`。每次提交都会删除并重新创建该 Release，将标签指向最新提交并刷新发布时间，不会保留旧 Release 或附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名仍为 `CodexMenuBarCredit.app.tar`。这是未压缩的 tar 数据，内部目录名暂保留为旧版的 `CodexMenuBarCredit.app`，以便已经安装的旧版更新器能够识别并完成这次升级；新版应用仍安装为 `Codex MenuBar Credit.app`。
 
 工作流定义位于 `.github/workflows/release.yml`。
 
@@ -75,7 +75,7 @@ Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex
 3. `codex app-server --stdio` 可以正常启动；终端中可用该命令进行诊断。
 4. 若 macOS 使用系统代理或 PAC，确保代理程序正在运行；App 会解析系统设置并传递给 Codex CLI。
 
-更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新只接受仓库发布的 `Codex MenuBar Credit.app`（底层为 `CodexMenuBarCredit.app.tar`）附件，不会打开网页安装。
+更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新接受仓库发布的 `Codex MenuBar Credit.app`（底层为 `CodexMenuBarCredit.app.tar`，内部目录兼容旧版 `CodexMenuBarCredit.app`）附件，不会打开网页安装。
 
 ## 开发与验证
 

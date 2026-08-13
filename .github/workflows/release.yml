@@ -32,15 +32,19 @@ jobs:
           APP_REVISION="$GITHUB_SHA" ./scripts/build-app.sh
           # GitHub Release assets must be single files. Keep the bundle uncompressed
           # GitHub rejects the .app extension for Release assets. Use an
-          # uncompressed tar stream and preserve the spaced app bundle name inside it.
-          tar -cf CodexMenuBarCredit.app.tar -C dist "Codex MenuBar Credit.app"
+          # uncompressed tar stream. Keep the legacy directory name inside the tar
+          # so versions released before the spaced bundle-name change can update.
+          PACKAGE_ROOT="$(mktemp -d)"
+          cp -R "dist/Codex MenuBar Credit.app" "$PACKAGE_ROOT/CodexMenuBarCredit.app"
+          tar -cf CodexMenuBarCredit.app.tar -C "$PACKAGE_ROOT" CodexMenuBarCredit.app
+          rm -rf "$PACKAGE_ROOT"
 
       - name: Verify package
         run: |
           test -x "dist/Codex MenuBar Credit.app/Contents/MacOS/CodexMenuBarCredit"
           test -f "dist/Codex MenuBar Credit.app/Contents/Info.plist"
           test -f CodexMenuBarCredit.app.tar
-          tar -tf CodexMenuBarCredit.app.tar | grep -qx "Codex MenuBar Credit.app/Contents/MacOS/CodexMenuBarCredit"
+          tar -tf CodexMenuBarCredit.app.tar | grep -qx "CodexMenuBarCredit.app/Contents/MacOS/CodexMenuBarCredit"
 
       - name: Replace autobuild Release
         env:
