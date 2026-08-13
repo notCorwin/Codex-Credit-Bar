@@ -6,8 +6,7 @@ cd "$ROOT_DIR"
 
 swift build -c release
 BIN_DIR="$(swift build -c release --show-bin-path)"
-APP_BUNDLE_NAME="Codex MenuBar Credit.app"
-APP_DIR="$ROOT_DIR/dist/$APP_BUNDLE_NAME"
+APP_DIR="$ROOT_DIR/dist/CodexMenuBarCredit.app"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"

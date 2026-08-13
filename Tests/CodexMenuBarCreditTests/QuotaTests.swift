@@ -179,7 +179,7 @@ final class QuotaTests: XCTestCase {
           "assets": [
             {
               "name": "CodexMenuBarCredit.app.tar",
-              "label": "Codex MenuBar Credit.app",
+              "label": "CodexMenuBarCredit.app",
               "browser_download_url": "https://example.com/CodexMenuBarCredit.app.tar"
             }
           ]
@@ -206,7 +206,7 @@ final class QuotaTests: XCTestCase {
           "assets": [
             {
               "name": "CodexMenuBarCredit.app.tar",
-              "label": "Codex MenuBar Credit.app",
+              "label": "CodexMenuBarCredit.app",
               "browser_download_url": "https://example.com/CodexMenuBarCredit.app.tar"
             }
           ]
