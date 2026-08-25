@@ -48,7 +48,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(
-        title: "退出 Codex MenuBar Credit",
+        title: "退出 Codex Credit Bar",
         action: #selector(quit),
         keyEquivalent: "q"
     )

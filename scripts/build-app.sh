@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 swift build -c release
 BIN_DIR="$(swift build -c release --show-bin-path)"
-APP_DIR="$ROOT_DIR/dist/CodexMenuBarCredit.app"
+APP_DIR="$ROOT_DIR/dist/Codex Credit Bar.app"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
@@ -25,7 +25,7 @@ for size in 16 32 128 256 512; do
         --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil --convert icns \
-    --output "$APP_DIR/Contents/Resources/CodexMenuBarCredit.icns" "$ICONSET_DIR"
+    --output "$APP_DIR/Contents/Resources/Codex Credit Bar.icns" "$ICONSET_DIR"
 if [[ -n "${APP_REVISION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleSourceRevision $APP_REVISION" \
         "$APP_DIR/Contents/Info.plist"

@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Codex MenuBar Credit</string>
+    <string>Codex Credit Bar</string>
     <key>CFBundleExecutable</key>
     <string>CodexMenuBarCredit</string>
     <key>CFBundleIdentifier</key>
     <string>com.codexmenubarcredit.menu-bar</string>
     <key>CFBundleIconFile</key>
-    <string>CodexMenuBarCredit.icns</string>
+    <string>Codex Credit Bar.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Codex MenuBar Credit</string>
+    <string>Codex Credit Bar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

@@ -115,8 +115,8 @@ final class CodexAppServerClient {
     private func sendInitialize() {
         let params: [String: Any] = [
             "clientInfo": [
-                "name": "codex-menubar-credit",
-                "title": "Codex MenuBar Credit",
+                "name": "codex-credit-bar",
+                "title": "Codex Credit Bar",
                 "version": "1.0.0"
             ],
             "capabilities": [String: Any]()
