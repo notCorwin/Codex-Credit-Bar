@@ -85,6 +85,16 @@ enum QuotaFormatter {
         return "\(max(1, remainingMinutes))分钟后"
     }
 
+    static func resetCreditExpiration(at timestamp: Int64?, timeZone: TimeZone = .current) -> String? {
+        guard let timestamp else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
+    }
+
     static func lastUpdated(_ date: Date, now: Date = Date()) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
         if seconds < 10 { return "刚刚" }

@@ -40,6 +40,11 @@ struct CreditsSnapshot: Decodable, Equatable {
 
 struct RateLimitResetCreditsSummary: Decodable, Equatable {
     let availableCount: Int
+    let credits: [RateLimitResetCredit]?
+}
+
+struct RateLimitResetCredit: Decodable, Equatable {
+    let expiresAt: Int64?
 }
 
 struct CodexQuota: Equatable {
@@ -47,11 +52,13 @@ struct CodexQuota: Equatable {
 
     let snapshot: RateLimitSnapshot
     let availableResetCreditCount: Int
+    let resetCreditExpiration: Int64?
     let fetchedAt: Date
 
     init(response: RateLimitsResponse, fetchedAt: Date = Date()) {
         self.snapshot = response.codexRateLimits
         self.availableResetCreditCount = response.availableResetCreditCount
+        self.resetCreditExpiration = response.rateLimitResetCredits?.credits?.compactMap(\.expiresAt).min()
         self.fetchedAt = fetchedAt
     }
 

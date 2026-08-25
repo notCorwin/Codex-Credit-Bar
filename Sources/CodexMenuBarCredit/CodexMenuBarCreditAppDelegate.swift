@@ -250,7 +250,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
 
         if quota.availableResetCreditCount > 0 {
-            creditsItem.title = "可用重置权益：\(quota.availableResetCreditCount) 个"
+            let expiration = QuotaFormatter.resetCreditExpiration(at: quota.resetCreditExpiration)
+                .map { " · 最早到期：\($0)" } ?? ""
+            creditsItem.title = "可用重置权益：\(quota.availableResetCreditCount) 个\(expiration)"
             creditsItem.isHidden = false
         } else if let credits = quota.credits, credits.hasCredits {
             let balance = credits.balance.map { "：\($0)" } ?? ""

@@ -18,7 +18,10 @@ final class QuotaTests: XCTestCase {
               "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
             }
           },
-          "rateLimitResetCredits": { "availableCount": 2 }
+          "rateLimitResetCredits": {
+            "availableCount": 2,
+            "credits": [{ "expiresAt": 3000 }, { "expiresAt": 2000 }]
+          }
         }
         """.data(using: .utf8)!
 
@@ -28,6 +31,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(quota.snapshot.limitId, "codex")
         XCTAssertEqual(quota.remainingPercent, 10)
         XCTAssertEqual(quota.availableResetCreditCount, 2)
+        XCTAssertEqual(quota.resetCreditExpiration, 2000)
         XCTAssertEqual(quota.planName, "Plus")
     }
 
@@ -53,6 +57,14 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 4 * 24 * 60 * 60 + 2 * 60 * 60, now: now), "4天 2小时后")
         XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 45, now: now), "即将重置")
         XCTAssertEqual(QuotaFormatter.resetDescription(at: 900, now: now), "等待同步")
+    }
+
+    func testResetCreditExpirationUsesTimezoneAndMinutePrecision() {
+        let timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+        XCTAssertEqual(
+            QuotaFormatter.resetCreditExpiration(at: 1_000, timeZone: timeZone),
+            "1970-01-01 08:16"
+        )
     }
 
     func testStatusTitleShowsRemainingPercentage() throws {
