@@ -178,9 +178,9 @@ final class QuotaTests: XCTestCase {
           "target_commitish": "\(revision)",
           "assets": [
             {
-              "name": "Codex Credit Bar.app.tar",
+              "name": "Codex.Credit.Bar.app.tar",
               "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://example.com/Codex%20Credit%20Bar.app.tar"
+              "browser_download_url": "https://example.com/Codex.Credit.Bar.app.tar"
             }
           ]
         }
@@ -205,9 +205,9 @@ final class QuotaTests: XCTestCase {
           "target_commitish": "\(releaseRevision)",
           "assets": [
             {
-              "name": "Codex Credit Bar.app.tar",
+              "name": "Codex.Credit.Bar.app.tar",
               "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://example.com/Codex%20Credit%20Bar.app.tar"
+              "browser_download_url": "https://example.com/Codex.Credit.Bar.app.tar"
             }
           ]
         }

@@ -33,14 +33,14 @@ jobs:
           # GitHub Release assets must be single files. Keep the bundle uncompressed
           # GitHub rejects the .app extension for Release assets. Use an
           # uncompressed tar stream and expose Codex Credit Bar.app as its display label.
-          tar -cf "Codex Credit Bar.app.tar" -C dist "Codex Credit Bar.app"
+          tar -cf Codex.Credit.Bar.app.tar -C dist "Codex Credit Bar.app"
 
       - name: Verify package
         run: |
           test -x "dist/Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
           test -f "dist/Codex Credit Bar.app/Contents/Info.plist"
-          test -f "Codex Credit Bar.app.tar"
-          tar -tf "Codex Credit Bar.app.tar" | grep -qx "Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
+          test -f Codex.Credit.Bar.app.tar
+          tar -tf Codex.Credit.Bar.app.tar | grep -qx "Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
 
       - name: Replace autobuild Release
         env:
@@ -83,12 +83,12 @@ jobs:
 
           curl --fail --silent --show-error \
             -X POST \
-            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=Codex%20Credit%20Bar.app.tar&label=Codex%20Credit%20Bar.app" \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=Codex.Credit.Bar.app.tar&label=Codex%20Credit%20Bar.app" \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/x-tar" \
-            --data-binary @"Codex Credit Bar.app.tar"
+            --data-binary @Codex.Credit.Bar.app.tar
 
           asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
-            --jq '[.[] | select(.name == "Codex Credit Bar.app.tar" and .label == "Codex Credit Bar.app")] | length')"
+            --jq '[.[] | select(.name == "Codex.Credit.Bar.app.tar" and .label == "Codex Credit Bar.app")] | length')"
           [[ "$asset_count" == "1" ]]
