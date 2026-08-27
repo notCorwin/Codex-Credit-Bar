@@ -12,7 +12,7 @@ enum QuotaFormatter {
             value = "∞"
         } else if let quota, quota.shouldDisplayExtraCredits {
             value = extraCreditsBalance(for: quota.credits)
-        } else if let remaining = quota?.remainingPercent {
+        } else if let remaining = quota?.statusRemainingPercent {
             value = "\(remaining)%"
         } else {
             value = "—"

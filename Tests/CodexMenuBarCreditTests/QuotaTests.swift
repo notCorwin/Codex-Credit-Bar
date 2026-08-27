@@ -67,21 +67,35 @@ final class QuotaTests: XCTestCase {
         )
     }
 
-    func testStatusTitleShowsRemainingPercentage() throws {
+    func testStatusTitlePrefersFiveHourWindow() throws {
         let json = """
         {
           "rateLimits": {
-            "primary": { "usedPercent": 0, "windowDurationMins": 300, "resetsAt": 2000 }
+            "primary": { "usedPercent": 90, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 40, "windowDurationMins": 300, "resetsAt": 2000 }
           }
         }
         """.data(using: .utf8)!
 
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
-        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "Codex 100%")
+        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "Codex 60%")
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "100%"
+            "60%"
         )
+    }
+
+    func testStatusTitleFallsBackToWeeklyWindow() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 25, "windowDurationMins": 10080, "resetsAt": 2000 }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota, includingProductName: false), "75%")
     }
 
     func testWeeklyExhaustionShowsExtraCredits() throws {
@@ -105,7 +119,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(QuotaFormatter.summary(for: quota), "可使用额外额度")
     }
 
-    func testWeeklyExhaustionWithoutExtraCreditsKeepsZeroPercent() throws {
+    func testWeeklyExhaustionWithoutExtraCreditsShowsFiveHourPercentage() throws {
         let json = """
         {
           "rateLimits": {
@@ -121,7 +135,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertFalse(quota.shouldDisplayExtraCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "0%"
+            "90%"
         )
         XCTAssertEqual(QuotaFormatter.summary(for: quota), "综合剩余 0%")
     }

@@ -48,6 +48,7 @@ struct RateLimitResetCredit: Decodable, Equatable {
 }
 
 struct CodexQuota: Equatable {
+    private static let fiveHourWindowDurationMins: Int64 = 5 * 60
     private static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
 
     let snapshot: RateLimitSnapshot
@@ -84,6 +85,13 @@ struct CodexQuota: Equatable {
         [primary, secondary]
             .compactMap { $0?.remainingPercent }
             .min()
+    }
+
+    var statusRemainingPercent: Int? {
+        let windows = [primary, secondary].compactMap { $0 }
+        return windows.first { $0.windowDurationMins == Self.fiveHourWindowDurationMins }?.remainingPercent
+            ?? weeklyWindow?.remainingPercent
+            ?? remainingPercent
     }
 
     var shouldDisplayExtraCredits: Bool {
