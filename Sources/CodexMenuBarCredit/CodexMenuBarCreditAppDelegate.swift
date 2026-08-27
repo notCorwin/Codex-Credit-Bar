@@ -29,7 +29,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var quota: CodexQuota?
     private var lastError: Error?
     private var isCheckingForUpdate = false
-    private var lastResolvedUpdateStatus: UpdateStatus = .checking
+    private var lastResolvedUpdateStatus: UpdateStatus = .latest
+    private var promptedUpdateRevision: String?
     private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
     private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -308,6 +309,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .success(let update):
                 guard let update else {
                     self.lastResolvedUpdateStatus = .latest
+                    self.promptedUpdateRevision = nil
                     self.applyUpdateStatus(.latest)
                     if !silently {
                         showAlert(title: "已是最新版本", message: "当前没有可用更新。")
@@ -318,7 +320,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 let status = UpdateStatus.available(revision)
                 self.lastResolvedUpdateStatus = status
                 self.applyUpdateStatus(status)
-                presentUpdate(update)
+                if self.promptedUpdateRevision != update.revision || !silently {
+                    self.promptedUpdateRevision = update.revision
+                    presentUpdate(update)
+                }
             case .failure(let error):
                 applyUpdateStatus(lastResolvedUpdateStatus)
                 if !silently {
@@ -347,9 +352,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             guard let self else { return }
             switch result {
             case .success:
-                NSApp.terminate(nil)
+                // AppUpdater launches the new bundle before its handoff process exits this one.
+                break
             case .failure(let error):
                 checkForUpdatesItem.isEnabled = true
+                promptedUpdateRevision = nil
                 showAlert(title: "更新失败", message: error.localizedDescription)
             }
         }

@@ -191,7 +191,7 @@ final class QuotaTests: XCTestCase {
     func testUpdateCheckUsesCanonicalReleaseRepository() {
         XCTAssertEqual(
             AppUpdater.releaseAPIURL.absoluteString,
-            "https://api.github.com/repos/notCorwin/codex-menubar-credit/releases/tags/autobuild"
+            "https://api.github.com/repos/notCorwin/Codex-Credit-Bar/releases/tags/autobuild"
         )
     }
 
@@ -224,6 +224,7 @@ final class QuotaTests: XCTestCase {
     func testReleaseWithDifferentTargetCommitIsAvailable() throws {
         let currentRevision = "0123456789abcdef0123456789abcdef01234567"
         let releaseRevision = "fedcba9876543210fedcba9876543210fedcba98"
+        let digest = String(repeating: "A", count: 64)
         let json = """
         {
           "name": "autobuild",
@@ -233,7 +234,8 @@ final class QuotaTests: XCTestCase {
             {
               "name": "Codex.Credit.Bar.app.tar",
               "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://example.com/Codex.Credit.Bar.app.tar"
+              "browser_download_url": "https://example.com/Codex.Credit.Bar.app.tar",
+              "digest": "sha256:\(digest)"
             }
           ]
         }
@@ -246,6 +248,20 @@ final class QuotaTests: XCTestCase {
             return
         }
         XCTAssertEqual(update?.revision, releaseRevision)
+        XCTAssertEqual(update?.expectedSHA256, digest.lowercased())
+    }
+
+    func testArchiveRootRejectsUnsafeOrMixedRoots() {
+        XCTAssertEqual(
+            AppUpdater.archiveAppRoot(from: """
+            Codex Credit Bar.app/
+            Codex Credit Bar.app/Contents/
+            Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit
+            """),
+            "Codex Credit Bar.app"
+        )
+        XCTAssertNil(AppUpdater.archiveAppRoot(from: "Codex Credit Bar.app/Contents\nother.txt"))
+        XCTAssertNil(AppUpdater.archiveAppRoot(from: "../Codex Credit Bar.app/Contents"))
     }
 
     func testProxyIsPassedToCodexEnvironment() throws {
