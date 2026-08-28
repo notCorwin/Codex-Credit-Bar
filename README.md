@@ -4,7 +4,7 @@ Codex Credit Bar 是一个原生 macOS 菜单栏应用，用于查看 Codex CLI 
 
 ## 应用效果
 
-![Codex Credit Bar 菜单栏效果](Assets/CodexMenuBarCreditPreview.jpg)
+![Codex Credit Bar 菜单栏效果](Assets/CodexMenuBarCreditPreview.jpeg)
 
 ## 功能
 
