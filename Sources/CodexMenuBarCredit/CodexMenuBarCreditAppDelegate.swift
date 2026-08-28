@@ -16,6 +16,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 return "有最新版本可用 · \(revision)"
             }
         }
+
+        var isInteractive: Bool {
+            if case .available = self { return true }
+            return false
+        }
     }
 
     private let client = CodexAppServerClient()
@@ -334,6 +339,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
         checkForUpdatesItem.title = title
         checkForUpdatesItem.attributedTitle = nil
+        checkForUpdatesItem.isEnabled = displayedUpdateStatus.isInteractive
     }
 
     private func renderErrorItem() {
@@ -349,11 +355,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         guard !isCheckingForUpdate else { return }
         isCheckingForUpdate = true
         applyUpdateStatus(.checking)
-        checkForUpdatesItem.isEnabled = false
         updater.check { [weak self] result in
             guard let self else { return }
             isCheckingForUpdate = false
-            checkForUpdatesItem.isEnabled = true
 
             switch result {
             case .success(let update):
