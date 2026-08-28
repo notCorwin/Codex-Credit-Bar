@@ -284,6 +284,25 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: credits), "积分剩余：90.32")
     }
 
+    func testKnownPlanTypesUseReadableNames() throws {
+        let expectedNames = [
+            "self_serve_business_prolite": "Business Pro Lite",
+            "enterprise_cbp_automation": "Enterprise",
+            "edu_plus": "Edu Plus",
+            "edu_pro": "Edu Pro",
+            "unknown": "Codex"
+        ]
+
+        for (planType, expectedName) in expectedNames {
+            let json = """
+            { "rateLimits": { "planType": "\(planType)" } }
+            """.data(using: .utf8)!
+            let response = try JSONDecoder().decode(RateLimitsResponse.self, from: json)
+
+            XCTAssertEqual(CodexQuota(response: response).planName, expectedName)
+        }
+    }
+
     func testConfiguredCodexPathTakesPriority() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)")

@@ -29,7 +29,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
     private var updateCheckTimer: Timer?
-    private var isPopupVisible = false
     private var isRefreshing = false
     private var quota: CodexQuota?
     private var lastError: Error?
@@ -67,13 +66,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         configureStatusItem()
         configureMenu()
         refreshNow()
-        refreshTimer = Timer.scheduledTimer(
+        let refreshTimer = Timer(
             timeInterval: 10,
             target: self,
             selector: #selector(refreshNow),
             userInfo: nil,
             repeats: true
         )
+        RunLoop.main.add(refreshTimer, forMode: .common)
+        self.refreshTimer = refreshTimer
         updateCheckTimer = Timer.scheduledTimer(
             timeInterval: 60 * 60,
             target: self,
@@ -86,18 +87,12 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
         updateCheckTimer?.invalidate()
-        isPopupVisible = false
         client.stop()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        isPopupVisible = true
         refreshNow()
         checkForUpdates(silently: true)
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        isPopupVisible = false
     }
 
     @objc private func refreshNow() {
@@ -128,10 +123,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                         self?.refreshNowWithRetry(allowingRetry: false)
                     }
                 }
-            }
-
-            if isPopupVisible {
-                refreshNowWithRetry(allowingRetry: false)
             }
         }
     }

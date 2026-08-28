@@ -33,7 +33,7 @@ final class CodexAppServerClient {
     }
 
     func stop() {
-        stateQueue.async { [weak self] in
+        stateQueue.sync { [weak self] in
             guard let self else { return }
             self.cleanupProcess(terminate: true)
         }

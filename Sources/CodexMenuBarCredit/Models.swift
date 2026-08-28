@@ -125,8 +125,13 @@ struct CodexQuota: Equatable {
         case "prolite": return "Pro Lite"
         case "team": return "Team"
         case "business", "self_serve_business_usage_based": return "Business"
-        case "ent26", "enterprise_cbp_usage_based", "enterprise": return "Enterprise"
+        case "self_serve_business_prolite": return "Business Pro Lite"
+        case "ent26", "enterprise_cbp_automation", "enterprise_cbp_usage_based", "enterprise":
+            return "Enterprise"
         case "edu": return "Edu"
+        case "edu_plus": return "Edu Plus"
+        case "edu_pro": return "Edu Pro"
+        case "unknown": return "Codex"
         default: return snapshot.planType?.capitalized ?? "Codex"
         }
     }
