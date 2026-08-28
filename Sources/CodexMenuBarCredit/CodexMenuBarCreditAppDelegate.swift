@@ -361,7 +361,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                     }
                     return
                 }
-                let revision = String(update.revision.prefix(6))
+                let revision = String(update.revision.prefix(7))
                 let status = UpdateStatus.available(revision)
                 self.lastResolvedUpdateStatus = status
                 self.applyUpdateStatus(status)
