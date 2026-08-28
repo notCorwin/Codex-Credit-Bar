@@ -35,10 +35,10 @@ enum QuotaFormatter {
 
     static func creditBalanceDescription(for credits: CreditsSnapshot?) -> String? {
         if credits?.unlimited == true {
-            return "额度剩余：无限额度"
+            return "积分剩余：无限积分"
         }
         guard let balance = creditsBalance(for: credits) else { return nil }
-        return "额度剩余：\(balance)"
+        return "积分剩余：\(balance)"
     }
 
     static func creditsBalance(for credits: CreditsSnapshot?) -> String? {
