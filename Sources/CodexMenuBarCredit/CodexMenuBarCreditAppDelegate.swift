@@ -13,7 +13,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .latest:
                 return "已是最新版本"
             case .available(let revision):
-                return "有最新版本 - \(revision)"
+                return "有最新版本可用 · \(revision)"
             }
         }
     }
@@ -30,14 +30,17 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var lastError: Error?
     private var isCheckingForUpdate = false
     private var lastResolvedUpdateStatus: UpdateStatus = .latest
+    private var displayedUpdateStatus: UpdateStatus = .checking
     private var promptedUpdateRevision: String?
-    private let headerItem = NSMenuItem(title: "Codex 剩余额度", action: nil, keyEquivalent: "")
-    private let summaryItem = NSMenuItem(title: "正在读取额度…", action: nil, keyEquivalent: "")
+    private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let creditsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let updatedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let resetHeaderItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let quotaSeparator = NSMenuItem.separator()
+    private let actionSeparator = NSMenuItem.separator()
+    private var resetCreditItems: [NSMenuItem] = []
     private lazy var openChatGPTItem = NSMenuItem(
         title: "打开 ChatGPT",
         action: #selector(openChatGPT),
@@ -162,8 +165,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         guard let button = statusItem.button else { return }
         button.title = statusTitle(for: nil)
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
-        button.toolTip = "Codex 剩余额度"
-        button.setAccessibilityLabel("Codex 剩余额度")
+        button.toolTip = "ChatGPT 使用限额"
+        button.setAccessibilityLabel("ChatGPT 使用限额")
         statusItem.menu = menu
         menu.delegate = self
         menu.autoenablesItems = false
@@ -171,23 +174,24 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func configureMenu() {
         headerItem.isEnabled = false
-        summaryItem.isEnabled = false
         primaryItem.isEnabled = false
         secondaryItem.isEnabled = false
         creditsItem.isEnabled = false
-        updatedItem.isEnabled = false
+        resetHeaderItem.isEnabled = false
         errorItem.isEnabled = false
+        quotaSeparator.isHidden = true
+        creditsItem.isHidden = true
+        resetHeaderItem.isHidden = true
         errorItem.isHidden = true
 
         menu.addItem(headerItem)
-        menu.addItem(summaryItem)
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(primaryItem)
         menu.addItem(secondaryItem)
+        menu.addItem(quotaSeparator)
         menu.addItem(creditsItem)
-        menu.addItem(updatedItem)
+        menu.addItem(resetHeaderItem)
+        menu.addItem(actionSeparator)
         menu.addItem(errorItem)
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(openChatGPTItem)
         menu.addItem(checkForUpdatesItem)
         menu.addItem(NSMenuItem.separator())
@@ -200,13 +204,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderLoading() {
         statusItem.button?.title = statusTitle(for: nil)
-        headerItem.title = "Codex 剩余额度"
-        summaryItem.title = "正在读取额度…"
-        primaryItem.isHidden = true
-        secondaryItem.isHidden = true
+        headerItem.title = "ChatGPT"
+        renderWindowItem(primaryItem, window: nil, now: Date())
+        renderWindowItem(secondaryItem, window: nil, now: Date())
         creditsItem.isHidden = true
-        updatedItem.isHidden = true
+        quotaSeparator.isHidden = true
+        clearResetCreditItems()
+        resetHeaderItem.isHidden = true
         errorItem.isHidden = true
+        renderUpdateItem()
     }
 
     private func renderCurrentState() {
@@ -226,64 +232,108 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func renderQuota(_ quota: CodexQuota) {
-        statusItem.button?.title = statusTitle(for: quota)
-        headerItem.title = "Codex · \(quota.planName)"
-        summaryItem.title = QuotaFormatter.summary(for: quota)
+        let now = Date()
+        statusItem.button?.title = statusTitle(for: quota, now: now)
+        headerItem.title = "ChatGPT \(quota.planName)"
+        let windows = quota.windowsForDisplay
+        renderWindowItem(primaryItem, window: windows.indices.contains(0) ? windows[0] : nil, now: now)
+        renderWindowItem(secondaryItem, window: windows.indices.contains(1) ? windows[1] : nil, now: now)
 
-        if let primary = quota.primary {
-            primaryItem.title = QuotaFormatter.windowDescription(
-                name: "\(QuotaFormatter.windowName(for: primary.windowDurationMins))",
-                window: primary
-            )
-            primaryItem.isHidden = false
-        } else {
-            primaryItem.isHidden = true
-        }
-
-        if let secondary = quota.secondary {
-            secondaryItem.title = QuotaFormatter.windowDescription(
-                name: "\(QuotaFormatter.windowName(for: secondary.windowDurationMins))",
-                window: secondary
-            )
-            secondaryItem.isHidden = false
-        } else {
-            secondaryItem.isHidden = true
-        }
-
-        if quota.availableResetCreditCount > 0 {
-            let expiration = QuotaFormatter.resetCreditExpiration(at: quota.resetCreditExpiration)
-                .map { " · 最早到期：\($0)" } ?? ""
-            creditsItem.title = "可用重置权益：\(quota.availableResetCreditCount) 个\(expiration)"
-            creditsItem.isHidden = false
-        } else if let credits = quota.credits, credits.hasCredits {
-            let balance = credits.balance.map { "：\($0)" } ?? ""
-            creditsItem.title = "额外额度\(balance)"
+        if let description = QuotaFormatter.creditBalanceDescription(for: quota.credits) {
+            creditsItem.title = description
             creditsItem.isHidden = false
         } else {
             creditsItem.isHidden = true
         }
 
-        updatedItem.title = "更新于：\(QuotaFormatter.lastUpdated(quota.fetchedAt))"
-        updatedItem.isHidden = false
+        renderResetCredits(quota, now: now, timeZone: .current)
+        quotaSeparator.isHidden = creditsItem.isHidden && resetHeaderItem.isHidden
+        renderUpdateItem()
         renderErrorItem()
     }
 
     private func renderErrorWithoutQuota() {
         statusItem.button?.title = "!"
-        headerItem.title = "Codex 剩余额度"
-        summaryItem.title = lastError?.localizedDescription ?? "无法读取额度"
-        primaryItem.isHidden = true
-        secondaryItem.isHidden = true
+        headerItem.title = "ChatGPT"
+        renderWindowItem(primaryItem, window: nil, now: Date())
+        renderWindowItem(secondaryItem, window: nil, now: Date())
         creditsItem.isHidden = true
-        updatedItem.isHidden = true
+        quotaSeparator.isHidden = true
+        clearResetCreditItems()
+        resetHeaderItem.isHidden = true
+        renderUpdateItem()
         renderErrorItem()
     }
 
-    private func statusTitle(for quota: CodexQuota?) -> String {
+    private func statusTitle(for quota: CodexQuota?, now: Date = Date()) -> String {
         QuotaFormatter.statusTitle(
             for: quota,
-            includingProductName: false
+            includingProductName: false,
+            now: now
         )
+    }
+
+    private func renderWindowItem(_ item: NSMenuItem, window: RateLimitWindow?, now: Date) {
+        guard let window else {
+            item.title = ""
+            item.isHidden = true
+            return
+        }
+        item.title = QuotaFormatter.windowDescription(
+            name: QuotaFormatter.windowTitle(for: window.windowDurationMins),
+            window: window,
+            now: now
+        )
+        item.isHidden = false
+    }
+
+    private func renderResetCredits(
+        _ quota: CodexQuota,
+        now: Date,
+        timeZone: TimeZone
+    ) {
+        clearResetCreditItems()
+        guard quota.availableResetCreditCount > 0 else {
+            resetHeaderItem.title = ""
+            resetHeaderItem.isHidden = true
+            return
+        }
+
+        resetHeaderItem.title = "使用限额重置 · \(quota.availableResetCreditCount)个（\(QuotaFormatter.timeZoneLabel(timeZone))）"
+        resetHeaderItem.isHidden = false
+        let insertionIndex = menu.index(of: actionSeparator)
+        guard insertionIndex >= 0 else { return }
+
+        for credit in quota.resetCredits {
+            let item = NSMenuItem(
+                title: QuotaFormatter.resetCreditDescription(
+                    at: credit.expiresAt,
+                    now: now,
+                    timeZone: timeZone
+                ),
+                action: nil,
+                keyEquivalent: ""
+            )
+            item.isEnabled = false
+            menu.insertItem(item, at: insertionIndex + resetCreditItems.count)
+            resetCreditItems.append(item)
+        }
+    }
+
+    private func clearResetCreditItems() {
+        for item in resetCreditItems {
+            menu.removeItem(item)
+        }
+        resetCreditItems.removeAll()
+    }
+
+    private func renderUpdateItem() {
+        var title = displayedUpdateStatus.title
+        if let fetchedAt = quota?.fetchedAt {
+            title += " · \(QuotaFormatter.lastUpdated(fetchedAt))"
+        }
+        checkForUpdatesItem.title = title
+        checkForUpdatesItem.attributedTitle = nil
     }
 
     private func renderErrorItem() {
@@ -334,8 +384,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func applyUpdateStatus(_ status: UpdateStatus) {
-        checkForUpdatesItem.title = status.title
-        checkForUpdatesItem.attributedTitle = nil
+        displayedUpdateStatus = status
+        renderUpdateItem()
     }
 
     private func presentUpdate(_ update: AppUpdate) {

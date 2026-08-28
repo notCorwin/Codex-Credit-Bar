@@ -53,13 +53,24 @@ struct CodexQuota: Equatable {
 
     let snapshot: RateLimitSnapshot
     let availableResetCreditCount: Int
-    let resetCreditExpiration: Int64?
+    let resetCredits: [RateLimitResetCredit]
     let fetchedAt: Date
 
     init(response: RateLimitsResponse, fetchedAt: Date = Date()) {
         self.snapshot = response.codexRateLimits
         self.availableResetCreditCount = response.availableResetCreditCount
-        self.resetCreditExpiration = response.rateLimitResetCredits?.credits?.compactMap(\.expiresAt).min()
+        self.resetCredits = (response.rateLimitResetCredits?.credits ?? []).sorted {
+            switch ($0.expiresAt, $1.expiresAt) {
+            case let (.some(lhs), .some(rhs)):
+                return lhs < rhs
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                return false
+            }
+        }
         self.fetchedAt = fetchedAt
     }
 
@@ -71,31 +82,38 @@ struct CodexQuota: Equatable {
         snapshot.secondary
     }
 
+    var fiveHourWindow: RateLimitWindow? {
+        [primary, secondary]
+            .compactMap { $0 }
+            .first { $0.windowDurationMins == Self.fiveHourWindowDurationMins }
+    }
+
     var weeklyWindow: RateLimitWindow? {
         [primary, secondary]
             .compactMap { $0 }
             .first { $0.windowDurationMins == Self.weeklyWindowDurationMins }
     }
 
+    var statusWindow: RateLimitWindow? {
+        fiveHourWindow ?? weeklyWindow ?? primary ?? secondary
+    }
+
+    var windowsForDisplay: [RateLimitWindow] {
+        [fiveHourWindow, weeklyWindow, primary, secondary]
+            .compactMap { $0 }
+            .reduce(into: [RateLimitWindow]()) { windows, window in
+                if !windows.contains(window) {
+                    windows.append(window)
+                }
+            }
+    }
+
     var credits: CreditsSnapshot? {
         snapshot.credits
     }
 
-    var remainingPercent: Int? {
-        [primary, secondary]
-            .compactMap { $0?.remainingPercent }
-            .min()
-    }
-
-    var statusRemainingPercent: Int? {
-        let windows = [primary, secondary].compactMap { $0 }
-        return windows.first { $0.windowDurationMins == Self.fiveHourWindowDurationMins }?.remainingPercent
-            ?? weeklyWindow?.remainingPercent
-            ?? remainingPercent
-    }
-
-    var shouldDisplayExtraCredits: Bool {
-        weeklyWindow?.remainingPercent == 0 && credits?.hasCredits == true
+    var shouldDisplayCredits: Bool {
+        statusWindow?.remainingPercent == 0 && credits?.hasCredits == true
     }
 
     var planName: String {

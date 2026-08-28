@@ -29,9 +29,9 @@ final class QuotaTests: XCTestCase {
         let quota = CodexQuota(response: response, fetchedAt: Date(timeIntervalSince1970: 1000))
 
         XCTAssertEqual(quota.snapshot.limitId, "codex")
-        XCTAssertEqual(quota.remainingPercent, 10)
+        XCTAssertEqual(quota.statusWindow?.remainingPercent, 60)
         XCTAssertEqual(quota.availableResetCreditCount, 2)
-        XCTAssertEqual(quota.resetCreditExpiration, 2000)
+        XCTAssertEqual(quota.resetCredits.map(\.expiresAt), [2000, 3000])
         XCTAssertEqual(quota.planName, "Plus")
     }
 
@@ -48,15 +48,55 @@ final class QuotaTests: XCTestCase {
         let response = try JSONDecoder().decode(RateLimitsResponse.self, from: json)
         let quota = CodexQuota(response: response)
 
-        XCTAssertEqual(quota.remainingPercent, 75)
+        XCTAssertEqual(quota.statusWindow?.remainingPercent, 75)
         XCTAssertEqual(QuotaFormatter.windowName(for: 60), "1小时额度")
     }
 
     func testResetDescriptionUsesReadableChineseUnits() {
         let now = Date(timeIntervalSince1970: 1_000)
-        XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 4 * 24 * 60 * 60 + 2 * 60 * 60, now: now), "4天 2小时后")
-        XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 45, now: now), "即将重置")
+        XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 4 * 24 * 60 * 60 + 2 * 60 * 60, now: now), "4 天 2 小时后")
+        XCTAssertEqual(QuotaFormatter.resetDescription(at: 1_000 + 32, now: now), "32 秒后")
         XCTAssertEqual(QuotaFormatter.resetDescription(at: 900, now: now), "等待同步")
+    }
+
+    func testWindowDescriptionUsesTwoPartResetCountdown() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let window = RateLimitWindow(
+            usedPercent: 12,
+            windowDurationMins: 300,
+            resetsAt: 1_000 + 1 * 60 * 60 + 58 * 60
+        )
+
+        XCTAssertEqual(QuotaFormatter.windowTitle(for: 300), "5 小时使用限额")
+        XCTAssertEqual(
+            QuotaFormatter.windowDescription(
+                name: QuotaFormatter.windowTitle(for: window.windowDurationMins),
+                window: window,
+                now: now
+            ),
+            "5 小时使用限额：88%，1 小时 58 分后重置"
+        )
+    }
+
+    func testRemainingTimeUsesAtMostTwoUnits() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(
+            QuotaFormatter.remainingTime(at: 1_000 + (2 * 365 + 99) * 24 * 60 * 60, now: now),
+            "2 年 99 天"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.remainingTime(at: 1_000 + 24 * 60 * 60 + 23 * 60 * 60, now: now),
+            "1 天 23 小时"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.remainingTime(at: 1_000 + 12 * 60 * 60 + 58 * 60, now: now),
+            "12 小时 58 分"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.remainingTime(at: 1_000 + 6 * 60 + 44, now: now),
+            "6 分 44 秒"
+        )
+        XCTAssertEqual(QuotaFormatter.remainingTime(at: 1_000 + 32, now: now), "32 秒")
     }
 
     func testResetCreditExpirationUsesTimezoneAndMinutePrecision() {
@@ -64,6 +104,25 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.resetCreditExpiration(at: 1_000, timeZone: timeZone),
             "1970-01-01 08:16"
+        )
+        XCTAssertEqual(QuotaFormatter.timeZoneLabel(timeZone), "UTC+8")
+        XCTAssertEqual(
+            QuotaFormatter.resetCreditDescription(
+                at: 1_000 + 60 * 60,
+                now: Date(timeIntervalSince1970: 1_000),
+                timeZone: timeZone
+            ),
+            "1970-01-01 09:16 / 1 小时后到期"
+        )
+    }
+
+    func testLastUpdatedUsesTwoPartAge() {
+        XCTAssertEqual(
+            QuotaFormatter.lastUpdated(
+                Date(timeIntervalSince1970: 1_000),
+                now: Date(timeIntervalSince1970: 1_068)
+            ),
+            "1 分钟 8 秒前"
         )
     }
 
@@ -98,49 +157,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(QuotaFormatter.statusTitle(for: quota, includingProductName: false), "75%")
     }
 
-    func testWeeklyExhaustionShowsExtraCredits() throws {
-        let json = """
-        {
-          "rateLimits": {
-            "primary": { "usedPercent": 10, "windowDurationMins": 300, "resetsAt": 2000 },
-            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 2000 },
-            "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" }
-          }
-        }
-        """.data(using: .utf8)!
-
-        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
-
-        XCTAssertTrue(quota.shouldDisplayExtraCredits)
-        XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "12.50"
-        )
-        XCTAssertEqual(QuotaFormatter.summary(for: quota), "可使用额外额度")
-    }
-
-    func testWeeklyExhaustionWithoutExtraCreditsShowsFiveHourPercentage() throws {
-        let json = """
-        {
-          "rateLimits": {
-            "primary": { "usedPercent": 10, "windowDurationMins": 300, "resetsAt": 2000 },
-            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 2000 },
-            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
-          }
-        }
-        """.data(using: .utf8)!
-
-        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
-
-        XCTAssertFalse(quota.shouldDisplayExtraCredits)
-        XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "90%"
-        )
-        XCTAssertEqual(QuotaFormatter.summary(for: quota), "综合剩余 0%")
-    }
-
-    func testShortWindowExhaustionDoesNotReplacePercentageWhenWeeklyQuotaRemains() throws {
+    func testFiveHourExhaustionShowsExtraCredits() throws {
         let json = """
         {
           "rateLimits": {
@@ -153,12 +170,118 @@ final class QuotaTests: XCTestCase {
 
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
 
-        XCTAssertFalse(quota.shouldDisplayExtraCredits)
+        XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "0%"
+            "US$12.50"
         )
-        XCTAssertEqual(QuotaFormatter.summary(for: quota), "综合剩余 0%")
+        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "额度剩余：US$12.50")
+    }
+
+    func testFiveHourExhaustionWithoutExtraCreditsShowsResetCountdown() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 13720 },
+            "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertFalse(quota.shouldDisplayCredits)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(
+                for: quota,
+                includingProductName: false,
+                now: Date(timeIntervalSince1970: 1_000)
+            ),
+            "3 小时 32 分"
+        )
+    }
+
+    func testFiveHourExhaustionUsesCreditsBeforeWeeklyPercentage() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertTrue(quota.shouldDisplayCredits)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "US$12.50"
+        )
+    }
+
+    func testProUsesWeeklyWindowWhenFiveHourWindowIsMissing() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 25, "windowDurationMins": 10080, "resetsAt": 2000 },
+            "planType": "pro",
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
+        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota, includingProductName: false), "75%")
+    }
+
+    func testProWeeklyExhaustionFallsBackToCreditsThenCountdown() throws {
+        let creditJSON = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 13720 },
+            "planType": "pro",
+            "credits": { "hasCredits": true, "unlimited": false, "balance": "90.318" }
+          }
+        }
+        """.data(using: .utf8)!
+        let creditQuota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: creditJSON))
+
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: creditQuota, includingProductName: false),
+            "US$90.32"
+        )
+
+        let noCreditJSON = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 13720 },
+            "planType": "pro",
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+        let noCreditQuota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: noCreditJSON))
+
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(
+                for: noCreditQuota,
+                includingProductName: false,
+                now: Date(timeIntervalSince1970: 1_000)
+            ),
+            "3 小时 32 分"
+        )
+    }
+
+    func testCreditBalanceIsFormattedAsUSCurrency() {
+        let credits = CreditsSnapshot(balance: "90.318", hasCredits: true, unlimited: false)
+
+        XCTAssertEqual(QuotaFormatter.creditsBalance(for: credits), "US$90.32")
+        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: credits), "额度剩余：US$90.32")
     }
 
     func testConfiguredCodexPathTakesPriority() throws {
