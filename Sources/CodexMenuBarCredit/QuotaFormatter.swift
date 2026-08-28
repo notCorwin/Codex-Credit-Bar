@@ -53,7 +53,7 @@ enum QuotaFormatter {
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let amount = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")) else {
-            return rawBalance.hasPrefix("US$") ? rawBalance : "US$\(rawBalance)"
+            return rawBalance
         }
 
         let formatter = NumberFormatter()
@@ -62,7 +62,7 @@ enum QuotaFormatter {
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
         formatter.roundingMode = .halfUp
-        return formatter.string(from: NSDecimalNumber(decimal: amount)).map { "US$\($0)" }
+        return formatter.string(from: NSDecimalNumber(decimal: amount))
     }
 
     static func windowDescription(

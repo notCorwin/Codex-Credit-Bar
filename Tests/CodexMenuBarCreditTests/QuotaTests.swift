@@ -173,9 +173,9 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "US$12.50"
+            "12.50"
         )
-        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "积分剩余：US$12.50")
+        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "积分剩余：12.50")
     }
 
     func testFiveHourExhaustionWithoutExtraCreditsShowsResetCountdown() throws {
@@ -218,7 +218,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "US$12.50"
+            "12.50"
         )
     }
 
@@ -253,7 +253,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: creditQuota, includingProductName: false),
-            "US$90.32"
+            "90.32"
         )
 
         let noCreditJSON = """
@@ -277,11 +277,11 @@ final class QuotaTests: XCTestCase {
         )
     }
 
-    func testCreditBalanceIsFormattedAsUSCurrency() {
+    func testCreditBalanceIsFormattedAsCredits() {
         let credits = CreditsSnapshot(balance: "90.318", hasCredits: true, unlimited: false)
 
-        XCTAssertEqual(QuotaFormatter.creditsBalance(for: credits), "US$90.32")
-        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: credits), "积分剩余：US$90.32")
+        XCTAssertEqual(QuotaFormatter.creditsBalance(for: credits), "90.32")
+        XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: credits), "积分剩余：90.32")
     }
 
     func testConfiguredCodexPathTakesPriority() throws {
