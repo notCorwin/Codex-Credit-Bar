@@ -35,7 +35,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var isCheckingForUpdate = false
     private var lastResolvedUpdateStatus: UpdateStatus = .latest
     private var displayedUpdateStatus: UpdateStatus = .checking
-    private var promptedUpdateRevision: String?
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -354,7 +353,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .success(let update):
                 guard let update else {
                     self.lastResolvedUpdateStatus = .latest
-                    self.promptedUpdateRevision = nil
                     self.applyUpdateStatus(.latest)
                     if !silently {
                         showAlert(title: "已是最新版本", message: "当前没有可用更新。")
@@ -365,8 +363,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 let status = UpdateStatus.available(revision)
                 self.lastResolvedUpdateStatus = status
                 self.applyUpdateStatus(status)
-                if self.promptedUpdateRevision != update.revision || !silently {
-                    self.promptedUpdateRevision = update.revision
+                if !silently {
                     presentUpdate(update)
                 }
             case .failure(let error):
@@ -401,7 +398,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 break
             case .failure(let error):
                 checkForUpdatesItem.isEnabled = true
-                promptedUpdateRevision = nil
                 showAlert(title: "更新失败", message: error.localizedDescription)
             }
         }

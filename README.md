@@ -15,7 +15,7 @@ Codex Credit Bar 是一个原生 macOS 菜单栏应用，用于查看 Codex CLI 
 - 通过 `codex app-server` 读取 Codex CLI 的登录状态；应用不会复制或保存访问令牌。
 - 自动将 macOS 系统代理（包括 PAC）传递给 Codex CLI，支持从 Finder 启动。
 - 从菜单直接启动本机的 ChatGPT App（当前 Bundle ID：`com.openai.codex`，兼容旧版 `com.openai.chat`）。
-- 唤出菜单及每小时自动检查 GitHub `autobuild` Release，有新版本时提示并下载、安装和重启。
+- 唤出菜单及每小时自动检查 GitHub `autobuild` Release，有新版本时在菜单中显示，可手动下载、安装和重启。
 
 ## 系统要求
 
@@ -65,7 +65,7 @@ Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex
 应用启动后会显示在 macOS 菜单栏。点击菜单栏中的额度数字即可查看详情：
 
 - **打开 ChatGPT**：启动本机已安装的 ChatGPT App；未安装或启动失败时显示提示，不会打开网页。
-- **更新状态**：唤出菜单时及每小时自动检查一次，显示“正在检查...” “已是最新版本”或“有最新版本可用 · 前七位哈希”。发现更新时点击该项可以立即重新检查。
+- **更新状态**：唤出菜单时及每小时自动检查一次，显示“正在检查...” “已是最新版本”或“有最新版本可用 · 前七位哈希”。自动发现更新时不会弹窗；点击该项后可确认更新。
 - **退出 Codex Credit Bar**：退出应用。
 
 应用通过 Codex CLI 的本地 `app-server` 获取数据。若额度读取失败，请确认：
