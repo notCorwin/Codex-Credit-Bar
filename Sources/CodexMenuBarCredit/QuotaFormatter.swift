@@ -120,20 +120,15 @@ enum QuotaFormatter {
 
     static func resetCreditDescription(
         at timestamp: Int64?,
-        now: Date = Date(),
-        timeZone: TimeZone = .current
+        now: Date = Date()
     ) -> String {
-        guard let timestamp,
-              let date = resetCreditExpiration(at: timestamp, timeZone: timeZone) else {
+        guard let remaining = remainingTime(at: timestamp, now: now) else {
             return "到期时间未知"
         }
-        guard let remaining = remainingTime(at: timestamp, now: now) else {
-            return date
-        }
         if remaining == "等待同步" {
-            return "\(date) / 已到期"
+            return "已到期"
         }
-        return "\(date) / \(remaining)后到期"
+        return "\(remaining)后到期"
     }
 
     static func resetCreditExpiration(at timestamp: Int64?, timeZone: TimeZone = .current) -> String? {

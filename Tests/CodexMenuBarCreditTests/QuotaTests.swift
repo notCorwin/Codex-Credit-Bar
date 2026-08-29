@@ -109,10 +109,9 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.resetCreditDescription(
                 at: 1_000 + 60 * 60,
-                now: Date(timeIntervalSince1970: 1_000),
-                timeZone: timeZone
+                now: Date(timeIntervalSince1970: 1_000)
             ),
-            "1970-01-01 09:16 / 1 小时后到期"
+            "1 小时后到期"
         )
     }
 

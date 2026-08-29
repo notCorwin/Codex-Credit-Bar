@@ -39,7 +39,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let creditsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let resetHeaderItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let quotaSeparator = NSMenuItem.separator()
     private let actionSeparator = NSMenuItem.separator()
@@ -172,11 +171,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         primaryItem.isEnabled = false
         secondaryItem.isEnabled = false
         creditsItem.isEnabled = false
-        resetHeaderItem.isEnabled = false
         errorItem.isEnabled = false
         quotaSeparator.isHidden = true
         creditsItem.isHidden = true
-        resetHeaderItem.isHidden = true
         errorItem.isHidden = true
 
         menu.addItem(headerItem)
@@ -184,7 +181,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         menu.addItem(secondaryItem)
         menu.addItem(quotaSeparator)
         menu.addItem(creditsItem)
-        menu.addItem(resetHeaderItem)
         menu.addItem(actionSeparator)
         menu.addItem(errorItem)
         menu.addItem(openChatGPTItem)
@@ -205,7 +201,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         creditsItem.isHidden = true
         quotaSeparator.isHidden = true
         clearResetCreditItems()
-        resetHeaderItem.isHidden = true
         errorItem.isHidden = true
         renderUpdateItem()
     }
@@ -241,8 +236,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             creditsItem.isHidden = true
         }
 
-        renderResetCredits(quota, now: now, timeZone: .current)
-        quotaSeparator.isHidden = creditsItem.isHidden && resetHeaderItem.isHidden
+        renderResetCredits(quota, now: now)
+        quotaSeparator.isHidden = creditsItem.isHidden && resetCreditItems.isEmpty
         renderUpdateItem()
         renderErrorItem()
     }
@@ -255,7 +250,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         creditsItem.isHidden = true
         quotaSeparator.isHidden = true
         clearResetCreditItems()
-        resetHeaderItem.isHidden = true
         renderUpdateItem()
         renderErrorItem()
     }
@@ -284,28 +278,19 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderResetCredits(
         _ quota: CodexQuota,
-        now: Date,
-        timeZone: TimeZone
+        now: Date
     ) {
         clearResetCreditItems()
         guard quota.availableResetCreditCount > 0 else {
-            resetHeaderItem.title = ""
-            resetHeaderItem.isHidden = true
             return
         }
 
-        resetHeaderItem.title = "使用限额重置 · \(quota.availableResetCreditCount)个（\(QuotaFormatter.timeZoneLabel(timeZone))）"
-        resetHeaderItem.isHidden = false
         let insertionIndex = menu.index(of: actionSeparator)
         guard insertionIndex >= 0 else { return }
 
         for credit in quota.resetCredits {
             let item = NSMenuItem(
-                title: QuotaFormatter.resetCreditDescription(
-                    at: credit.expiresAt,
-                    now: now,
-                    timeZone: timeZone
-                ),
+                title: "使用限额重置 · \(QuotaFormatter.resetCreditDescription(at: credit.expiresAt, now: now))",
                 action: nil,
                 keyEquivalent: ""
             )
