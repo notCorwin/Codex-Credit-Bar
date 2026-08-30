@@ -12,17 +12,21 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         case available(String)
 
         var title: String {
+            title(language: .simplifiedChinese)
+        }
+
+        func title(language: AppLanguage) -> String {
             switch self {
             case .idle:
-                return "检查更新"
+                return AppLocalization.text(.updateCheck, language: language)
             case .checking:
-                return "正在检查..."
+                return AppLocalization.text(.updateChecking, language: language)
             case .latest:
-                return "已是最新版本"
+                return AppLocalization.text(.updateLatest, language: language)
             case .failed:
-                return "检查更新失败"
+                return AppLocalization.text(.updateFailed, language: language)
             case .available(let revision):
-                return "有最新版本可用 · \(revision)"
+                return AppLocalization.format(.updateAvailable, language: language, revision)
             }
         }
 
@@ -36,7 +40,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
     }
 
-    private let client = CodexAppServerClient()
+    private let language = AppLanguage.current
+    private let client = CodexAppServerClient(language: AppLanguage.current)
     private let updater = AppUpdater()
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
@@ -61,17 +66,17 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private let actionSeparator = NSMenuItem.separator()
     private var resetCreditItems: [NSMenuItem] = []
     private lazy var openChatGPTItem = NSMenuItem(
-        title: "打开 ChatGPT",
+        title: AppLocalization.text(.openChatGPT, language: language),
         action: #selector(openChatGPT),
         keyEquivalent: ""
     )
     private lazy var checkForUpdatesItem = NSMenuItem(
-        title: UpdateStatus.idle.title,
+        title: UpdateStatus.idle.title(language: language),
         action: #selector(checkForUpdatesNow),
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(
-        title: "退出 Codex Credit Bar",
+        title: AppLocalization.text(.quit, language: language),
         action: #selector(quit),
         keyEquivalent: "q"
     )
@@ -166,13 +171,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             .compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) })
             .first else {
             showAlert(
-                title: "找不到 ChatGPT App",
-                message: "请先安装 ChatGPT macOS App。应用不会打开网页。"
+                title: AppLocalization.text(.findChatGPTTitle, language: language),
+                message: AppLocalization.text(.findChatGPTMessage, language: language)
             )
             return
         }
         guard NSWorkspace.shared.open(appURL) else {
-            showAlert(title: "无法打开 ChatGPT App", message: "请稍后重试。")
+            showAlert(
+                title: AppLocalization.text(.cannotOpenChatGPTTitle, language: language),
+                message: AppLocalization.text(.tryAgain, language: language)
+            )
             return
         }
     }
@@ -194,8 +202,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         guard let button = statusItem.button else { return }
         setStatusButtonTitle(statusTitle(for: nil))
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
-        button.toolTip = "ChatGPT 使用限额"
-        button.setAccessibilityLabel("ChatGPT 使用限额")
+        button.toolTip = AppLocalization.text(.chatGPTUsageLimit, language: language)
+        button.setAccessibilityLabel(AppLocalization.text(.chatGPTUsageLimit, language: language))
         statusItem.menu = menu
         menu.delegate = self
         menu.autoenablesItems = false
@@ -264,7 +272,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         renderWindowItem(primaryItem, window: windows.indices.contains(0) ? windows[0] : nil, now: now)
         renderWindowItem(secondaryItem, window: windows.indices.contains(1) ? windows[1] : nil, now: now)
 
-        if let description = QuotaFormatter.creditBalanceDescription(for: quota.credits) {
+        if let description = QuotaFormatter.creditBalanceDescription(for: quota.credits, language: language) {
             creditsItem.title = description
             creditsItem.isHidden = false
         } else {
@@ -293,7 +301,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         QuotaFormatter.statusTitle(
             for: quota,
             includingProductName: false,
-            now: now
+            now: now,
+            language: language
         )
     }
 
@@ -310,9 +319,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             return
         }
         item.title = QuotaFormatter.windowDescription(
-            name: QuotaFormatter.windowTitle(for: window.windowDurationMins),
+            name: QuotaFormatter.windowTitle(for: window.windowDurationMins, language: language),
             window: window,
-            now: now
+            now: now,
+            language: language
         )
         item.isHidden = false
     }
@@ -332,7 +342,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         for credit in credits {
             let item = NSMenuItem(
-                title: "使用限额重置 · \(QuotaFormatter.resetCreditDescription(at: credit.expiresAt, now: now, expirationIsKnown: credit.expirationIsKnown))",
+                title: AppLocalization.format(
+                    .resetCredit,
+                    language: language,
+                    QuotaFormatter.resetCreditDescription(
+                        at: credit.expiresAt,
+                        now: now,
+                        expirationIsKnown: credit.expirationIsKnown,
+                        language: language
+                    )
+                ),
                 action: nil,
                 keyEquivalent: ""
             )
@@ -350,9 +369,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func renderUpdateItem() {
-        var title = displayedUpdateStatus.title
+        var title = displayedUpdateStatus.title(language: language)
         if let fetchedAt = quota?.fetchedAt {
-            title += " · \(QuotaFormatter.lastUpdated(fetchedAt))"
+            title += " · \(QuotaFormatter.lastUpdated(fetchedAt, language: language))"
         }
         checkForUpdatesItem.title = title
         checkForUpdatesItem.attributedTitle = nil
@@ -361,7 +380,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderErrorItem() {
         if let lastError {
-            errorItem.title = "连接提示：\(Self.compactErrorMessage(lastError.localizedDescription))"
+            errorItem.title = AppLocalization.format(
+                .connectionNotice,
+                language: language,
+                Self.compactErrorMessage(lastError.localizedDescription)
+            )
             errorItem.isHidden = false
         } else {
             errorItem.isHidden = true
@@ -390,7 +413,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                     self.lastResolvedUpdateStatus = .latest
                     self.applyUpdateStatus(.latest)
                     if !silently {
-                        showAlert(title: "已是最新版本", message: "当前没有可用更新。")
+                        showAlert(
+                            title: AppLocalization.text(.latestVersionTitle, language: language),
+                            message: AppLocalization.text(.noUpdateAvailable, language: language)
+                        )
                     }
                     return
                 }
@@ -405,7 +431,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 self.lastResolvedUpdateStatus = .failed
                 applyUpdateStatus(lastResolvedUpdateStatus)
                 if !silently {
-                    showAlert(title: "检查更新失败", message: error.localizedDescription)
+                    showAlert(
+                        title: AppLocalization.text(.updateFailed, language: language),
+                        message: error.localizedDescription
+                    )
                 }
             }
         }
@@ -418,11 +447,13 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func presentUpdate(_ update: AppUpdate) {
         let alert = NSAlert()
-        alert.messageText = "发现新版本"
-        let revision = update.revision == "unknown" ? "" : "\n构建：\(update.revision.prefix(7))"
-        alert.informativeText = "\(update.name)\(revision)\n是否下载并安装？"
-        alert.addButton(withTitle: "更新")
-        alert.addButton(withTitle: "稍后")
+        alert.messageText = AppLocalization.text(.newVersionTitle, language: language)
+        let revision = update.revision == "unknown"
+            ? ""
+            : "\n\(AppLocalization.format(.buildRevision, language: language, String(update.revision.prefix(7))))"
+        alert.informativeText = "\(update.name)\(revision)\n\(AppLocalization.text(.updatePrompt, language: language))"
+        alert.addButton(withTitle: AppLocalization.text(.update, language: language))
+        alert.addButton(withTitle: AppLocalization.text(.later, language: language))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         isInstallingUpdate = true
@@ -436,7 +467,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .failure(let error):
                 isInstallingUpdate = false
                 renderUpdateItem()
-                showAlert(title: "更新失败", message: error.localizedDescription)
+                showAlert(
+                    title: AppLocalization.text(.updateInstallFailedTitle, language: language),
+                    message: error.localizedDescription
+                )
             }
         }
     }
@@ -445,7 +479,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: AppLocalization.text(.okay, language: language))
         alert.runModal()
     }
 

@@ -29,23 +29,23 @@ enum AppUpdateError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .notPackaged:
-            return "更新功能只能从已打包的 Codex Credit Bar App 运行。"
+            return AppLocalization.text(.updateNotPackaged)
         case .noRelease:
-            return "GitHub 上暂无可用的 autobuild Release。"
+            return AppLocalization.text(.noRelease)
         case .network(let message):
-            return "无法检查更新：\(message)"
+            return AppLocalization.format(.checkUpdateFailed, message)
         case .invalidResponse:
-            return "GitHub 返回的版本信息无效。"
+            return AppLocalization.text(.githubInvalidResponse)
         case .assetMissing:
-            return "最新 Release 没有 Codex Credit Bar.app 附件。"
+            return AppLocalization.text(.assetMissing)
         case .downloadFailed(let message):
-            return "更新下载失败：\(message)"
+            return AppLocalization.format(.downloadFailed, message)
         case .invalidPackage:
-            return "下载的更新包不是有效的 Codex Credit Bar App。"
+            return AppLocalization.text(.invalidPackage)
         case .installFailed(let message):
-            return "更新安装失败：\(message)"
+            return AppLocalization.format(.installFailed, message)
         case .busy:
-            return "更新操作正在进行中。"
+            return AppLocalization.text(.updateBusy)
         }
     }
 }
@@ -363,7 +363,11 @@ final class AppUpdater: @unchecked Sendable {
             guard let response = response as? HTTPURLResponse else {
                 self.finish(
                     completion,
-                    with: .failure(AppUpdateError.downloadFailed("GitHub 返回了无效响应。")),
+                    with: .failure(
+                        AppUpdateError.downloadFailed(
+                            AppLocalization.text(.githubInvalidResponse)
+                        )
+                    ),
                     generation: generation
                 )
                 return
@@ -382,7 +386,9 @@ final class AppUpdater: @unchecked Sendable {
                 self.finish(
                     completion,
                     with: .failure(
-                        AppUpdateError.downloadFailed("GitHub HTTP 状态码：\(response.statusCode)")
+                        AppUpdateError.downloadFailed(
+                            AppLocalization.format(.githubHTTPStatus, String(response.statusCode))
+                        )
                     ),
                     generation: generation
                 )
@@ -391,7 +397,11 @@ final class AppUpdater: @unchecked Sendable {
             guard let location else {
                 self.finish(
                     completion,
-                    with: .failure(AppUpdateError.downloadFailed("GitHub 返回了空文件。")),
+                    with: .failure(
+                        AppUpdateError.downloadFailed(
+                            AppLocalization.text(.githubEmptyFile)
+                        )
+                    ),
                     generation: generation
                 )
                 return
@@ -471,7 +481,9 @@ final class AppUpdater: @unchecked Sendable {
             return .invalidResponse
         }
         guard (200..<300).contains(response.statusCode) else {
-            return .network("GitHub HTTP 状态码：\(response.statusCode)")
+            return .network(
+                AppLocalization.format(.githubHTTPStatus, String(response.statusCode))
+            )
         }
         return nil
     }
@@ -796,7 +808,10 @@ final class AppUpdater: @unchecked Sendable {
                     try restoreBackup(at: backupApp, to: currentApp, fileManager: fileManager)
                 } catch {
                     throw AppUpdateError.installFailed(
-                        "更新替换失败，且恢复旧版本失败：\(error.localizedDescription)"
+                        AppLocalization.format(
+                            .replaceFailedAndRestore,
+                            error.localizedDescription
+                        )
                     )
                 }
             } else {
@@ -811,9 +826,16 @@ final class AppUpdater: @unchecked Sendable {
             do {
                 try restoreBackup(at: backupApp, to: currentApp, fileManager: fileManager)
             } catch {
-                throw AppUpdateError.installFailed("无法启动更新后的 App，且恢复旧版本失败：\(error.localizedDescription)")
+                throw AppUpdateError.installFailed(
+                    AppLocalization.format(
+                        .launchUpdatedAndRestoreFailed,
+                        error.localizedDescription
+                    )
+                )
             }
-            throw AppUpdateError.installFailed("无法启动更新后的 App：\(error.localizedDescription)")
+            throw AppUpdateError.installFailed(
+                AppLocalization.format(.launchUpdatedFailed, error.localizedDescription)
+            )
         }
     }
 
@@ -940,11 +962,13 @@ final class AppUpdater: @unchecked Sendable {
         do {
             try process.run()
         } catch {
-            throw AppUpdateError.installFailed("无法启动更新后的 App：\(error.localizedDescription)")
+            throw AppUpdateError.installFailed(
+                AppLocalization.format(.launchUpdatedFailed, error.localizedDescription)
+            )
         }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw AppUpdateError.installFailed("更新后的 App 未能完成启动交接。")
+            throw AppUpdateError.installFailed(AppLocalization.text(.handoffFailed))
         }
     }
 }

@@ -10,6 +10,7 @@ final class CodexAppServerClient: @unchecked Sendable {
     private static let maxResponseLineBytes = 1024 * 1024
     private static let maxErrorBufferBytes = 64 * 1024
     private let launchEnvironment: [String: String]
+    private let language: AppLanguage
     private var process: Process?
     private var inputPipe: Pipe?
     private var outputPipe: Pipe?
@@ -27,10 +28,12 @@ final class CodexAppServerClient: @unchecked Sendable {
 
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        requestTimeout: TimeInterval = 15
+        requestTimeout: TimeInterval = 15,
+        language: AppLanguage = .simplifiedChinese
     ) {
         self.launchEnvironment = environment
         self.requestTimeout = requestTimeout
+        self.language = language
         // A closed child pipe may raise SIGPIPE before FileHandle reports EPIPE.
         signal(SIGPIPE, SIG_IGN)
     }
@@ -243,7 +246,9 @@ final class CodexAppServerClient: @unchecked Sendable {
 
         do {
             guard let inputPipe else {
-                throw CodexClientError.writeFailed("Codex 输入管道不可用")
+                throw CodexClientError.writeFailed(
+                    AppLocalization.text(.codexInputUnavailable, language: language)
+                )
             }
             var data = try JSONSerialization.data(withJSONObject: request)
             data.append(0x0A)
@@ -291,7 +296,11 @@ final class CodexAppServerClient: @unchecked Sendable {
                 continue
             }
             guard let id = Self.responseID(from: rawID) else {
-                failAllRequestsAndStop(with: CodexClientError.invalidResponse("Codex 响应的 id 无效"))
+                failAllRequestsAndStop(
+                    with: CodexClientError.invalidResponse(
+                        AppLocalization.text(.codexInvalidResponseID, language: language)
+                    )
+                )
                 continue
             }
             guard let completion = pendingRequests.removeValue(forKey: id) else {
@@ -301,13 +310,20 @@ final class CodexAppServerClient: @unchecked Sendable {
             requestTimeouts.removeValue(forKey: id)
 
             if let error = message["error"] as? [String: Any] {
-                let message = error["message"] as? String ?? "Codex 返回了未知错误"
+                let message = error["message"] as? String
+                    ?? AppLocalization.text(.codexUnknownError, language: language)
                 completion(.failure(CodexClientError.server(message)))
                 continue
             }
 
             guard let result = message["result"] else {
-                completion(.failure(CodexClientError.invalidResponse("Codex 响应缺少 result")))
+                completion(
+                    .failure(
+                        CodexClientError.invalidResponse(
+                            AppLocalization.text(.codexMissingResult, language: language)
+                        )
+                    )
+                )
                 continue
             }
             do {
@@ -558,25 +574,27 @@ enum CodexClientError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .executableNotFound:
-            return "找不到 Codex CLI，请先安装 Codex。"
+            return AppLocalization.text(.codexExecutableNotFound)
         case .launchFailed(let message):
-            return "无法启动 Codex：\(message)"
+            return AppLocalization.format(.codexLaunchFailed, message)
         case .writeFailed(let message):
-            return "无法请求 Codex 额度：\(message)"
+            return AppLocalization.format(.codexRequestFailed, message)
         case .invalidResponse(let message):
-            return "Codex 返回的数据无效：\(message)"
+            return AppLocalization.format(.codexInvalidResponse, message)
         case .server(let message):
-            return "Codex：\(message)"
+            return AppLocalization.format(.codexServer, message)
         case .requestTimedOut:
-            return "Codex 响应超时，请确认已完成 codex login。"
+            return AppLocalization.text(.codexRequestTimedOut)
         case .processExited(let status, let details):
-            let description = status == 0 ? "Codex 连接已关闭。" : "Codex 连接异常退出（\(status)）。"
+            let description = status == 0
+                ? AppLocalization.text(.codexConnectionClosed)
+                : AppLocalization.format(.codexConnectionExited, String(status))
             guard let details, !details.isEmpty else { return description }
             return "\(description)\n\(details)"
         case .outputClosed:
-            return "Codex 输出管道已关闭。"
+            return AppLocalization.text(.codexOutputClosed)
         case .stopped:
-            return "Codex 连接已停止。"
+            return AppLocalization.text(.codexStopped)
         }
     }
 }

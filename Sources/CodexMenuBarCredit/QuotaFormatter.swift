@@ -9,7 +9,8 @@ enum QuotaFormatter {
     static func statusTitle(
         for quota: CodexQuota?,
         includingProductName: Bool = true,
-        now: Date = Date()
+        now: Date = Date(),
+        language: AppLanguage = .simplifiedChinese
     ) -> String {
         let value: String
         if quota == nil {
@@ -22,7 +23,7 @@ enum QuotaFormatter {
             } else if quota.shouldDisplayCredits,
                       let balance = creditsBalance(for: quota.credits) {
                 value = balance
-            } else if let remaining = remainingTime(at: window.resetsAt, now: now) {
+            } else if let remaining = remainingTime(at: window.resetsAt, now: now, language: language) {
                 value = remaining
             } else {
                 value = "\(window.remainingPercent)%"
@@ -33,12 +34,15 @@ enum QuotaFormatter {
         return includingProductName ? "Codex \(value)" : value
     }
 
-    static func creditBalanceDescription(for credits: CreditsSnapshot?) -> String? {
+    static func creditBalanceDescription(
+        for credits: CreditsSnapshot?,
+        language: AppLanguage = .simplifiedChinese
+    ) -> String? {
         if credits?.unlimited == true {
-            return "积分剩余：无限积分"
+            return AppLocalization.text(.creditUnlimited, language: language)
         }
         guard let balance = creditsBalance(for: credits) else { return nil }
-        return "积分剩余：\(balance)"
+        return AppLocalization.format(.creditBalance, language: language, balance)
     }
 
     static func creditsBalance(for credits: CreditsSnapshot?) -> String? {
@@ -68,78 +72,112 @@ enum QuotaFormatter {
     static func windowDescription(
         name: String,
         window: RateLimitWindow,
-        now: Date = Date()
+        now: Date = Date(),
+        language: AppLanguage = .simplifiedChinese
     ) -> String {
-        let reset = resetDescription(at: window.resetsAt, now: now)
-        let suffix: String
-        if reset == "等待同步" || reset == "重置时间未知" {
-            suffix = reset
+        let reset = resetDescription(at: window.resetsAt, now: now, language: language)
+        let resetTitle: String
+        if reset == AppLocalization.text(.waitingForSync, language: language)
+            || reset == AppLocalization.text(.unknownReset, language: language) {
+            resetTitle = reset
         } else {
-            suffix = "\(reset)重置"
+            resetTitle = AppLocalization.format(.resetSuffix, language: language, reset)
         }
-        return "\(name)：\(window.remainingPercent)%，\(suffix)"
+        return AppLocalization.format(
+            .windowDescription,
+            language: language,
+            name,
+            "\(window.remainingPercent)%",
+            resetTitle
+        )
     }
 
-    static func windowTitle(for duration: Int64?) -> String {
+    static func windowTitle(
+        for duration: Int64?,
+        language: AppLanguage = .simplifiedChinese
+    ) -> String {
         switch duration {
         case 5 * 60:
-            return "5 小时使用限额"
+            return AppLocalization.text(.fiveHourLimit, language: language)
         case 7 * 24 * 60:
-            return "每周使用限额"
+            return AppLocalization.text(.weeklyLimit, language: language)
         default:
-            return windowName(for: duration)
+            return windowName(for: duration, language: language)
         }
     }
 
-    static func windowName(for duration: Int64?) -> String {
-        guard let duration, duration > 0 else { return "额度" }
+    static func windowName(
+        for duration: Int64?,
+        language: AppLanguage = .simplifiedChinese
+    ) -> String {
+        guard let duration, duration > 0 else {
+            return AppLocalization.text(.quota, language: language)
+        }
         if duration % (24 * 60) == 0 {
             let days = duration / (24 * 60)
-            if days == 7 { return "周额度" }
-            return "\(days)天额度"
+            if days == 7 {
+                return AppLocalization.text(.weeklyQuota, language: language)
+            }
+            return AppLocalization.format(.dayQuota, language: language, String(days))
         }
         if duration % 60 == 0 {
-            return "\(duration / 60)小时额度"
+            return AppLocalization.format(.hourQuota, language: language, String(duration / 60))
         }
-        return "\(duration)分钟额度"
+        return AppLocalization.format(.minuteQuota, language: language, String(duration))
     }
 
-    static func remainingTime(at timestamp: Int64?, now: Date = Date()) -> String? {
+    static func remainingTime(
+        at timestamp: Int64?,
+        now: Date = Date(),
+        language: AppLanguage = .simplifiedChinese
+    ) -> String? {
         guard let timestamp else { return nil }
         guard let nowSeconds = wholeSeconds(from: now.timeIntervalSince1970) else {
             return nil
         }
-        guard timestamp > nowSeconds else { return "等待同步" }
+        guard timestamp > nowSeconds else {
+            return AppLocalization.text(.waitingForSync, language: language)
+        }
         let (seconds, overflow) = timestamp.subtractingReportingOverflow(nowSeconds)
-        guard !overflow else { return durationDescription(Int64.max) }
-        return durationDescription(seconds)
+        guard !overflow else {
+            return durationDescription(Int64.max, language: language)
+        }
+        return durationDescription(seconds, language: language)
     }
 
-    static func resetDescription(at timestamp: Int64?, now: Date = Date()) -> String {
-        guard let remaining = remainingTime(at: timestamp, now: now) else {
-            return "重置时间未知"
+    static func resetDescription(
+        at timestamp: Int64?,
+        now: Date = Date(),
+        language: AppLanguage = .simplifiedChinese
+    ) -> String {
+        guard let remaining = remainingTime(at: timestamp, now: now, language: language) else {
+            return AppLocalization.text(.unknownReset, language: language)
         }
-        return remaining == "等待同步" ? remaining : "\(remaining)后"
+        if remaining == AppLocalization.text(.waitingForSync, language: language) {
+            return remaining
+        }
+        return AppLocalization.format(.resetIn, language: language, remaining)
     }
 
     static func resetCreditDescription(
         at timestamp: Int64?,
         now: Date = Date(),
-        expirationIsKnown: Bool = true
+        expirationIsKnown: Bool = true,
+        language: AppLanguage = .simplifiedChinese
     ) -> String {
         guard expirationIsKnown else {
-            return "到期时间未知"
+            return AppLocalization.text(.unknownExpiration, language: language)
         }
         guard let timestamp else {
-            return "永不过期"
+            return AppLocalization.text(.neverExpires, language: language)
         }
-        guard let remaining = remainingTime(at: timestamp, now: now) else {
-            return "到期时间未知"
+        guard let remaining = remainingTime(at: timestamp, now: now, language: language) else {
+            return AppLocalization.text(.unknownExpiration, language: language)
         }
-        if remaining == "等待同步" {
-            return "已到期"
+        if remaining == AppLocalization.text(.waitingForSync, language: language) {
+            return AppLocalization.text(.expired, language: language)
         }
-        return "\(remaining)后到期"
+        return AppLocalization.format(.expiresIn, language: language, remaining)
     }
 
     static func resetCreditExpiration(at timestamp: Int64?, timeZone: TimeZone = .current) -> String? {
@@ -164,7 +202,11 @@ enum QuotaFormatter {
         return "UTC\(sign)\(String(format: "%02d:%02d", hours, minutes))"
     }
 
-    static func lastUpdated(_ date: Date, now: Date = Date()) -> String {
+    static func lastUpdated(
+        _ date: Date,
+        now: Date = Date(),
+        language: AppLanguage = .simplifiedChinese
+    ) -> String {
         let elapsed = now.timeIntervalSince(date)
         let seconds: Int64
         if elapsed.isNaN || elapsed <= 0 {
@@ -174,8 +216,14 @@ enum QuotaFormatter {
         } else {
             seconds = Int64(elapsed)
         }
-        if seconds < 10 { return "刚刚" }
-        return "\(durationDescription(seconds, minuteName: "分钟"))前"
+        if seconds < 10 {
+            return AppLocalization.text(.justNow, language: language)
+        }
+        return AppLocalization.format(
+            .ago,
+            language: language,
+            durationDescription(seconds, longMinute: true, language: language)
+        )
     }
 
     private static func wholeSeconds(from interval: TimeInterval) -> Int64? {
@@ -185,19 +233,29 @@ enum QuotaFormatter {
         return Int64(interval)
     }
 
-    private static func durationDescription(_ seconds: Int64, minuteName: String = "分") -> String {
+    private static func durationDescription(
+        _ seconds: Int64,
+        longMinute: Bool = false,
+        language: AppLanguage
+    ) -> String {
         var remaining = seconds
-        let units: [(Int64, String)] = [
-            (secondsPerYear, "年"),
-            (secondsPerDay, "天"),
-            (secondsPerHour, "小时"),
-            (secondsPerMinute, minuteName),
-            (1, "秒")
+        let units: [(Int64, AppLocalization.DurationUnit)] = [
+            (secondsPerYear, .year),
+            (secondsPerDay, .day),
+            (secondsPerHour, .hour),
+            (secondsPerMinute, .minute),
+            (1, .second)
         ]
         var parts: [String] = []
-        for (unit, name) in units {
+        for (unit, durationUnit) in units {
             let count = remaining / unit
             if count > 0 {
+                let name = AppLocalization.durationUnit(
+                    durationUnit,
+                    count: count,
+                    longMinute: longMinute,
+                    language: language
+                )
                 parts.append("\(count) \(name)")
                 remaining %= unit
             }

@@ -174,6 +174,49 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(status.isInteractive)
     }
 
+    func testEnglishLocalizationUsesSystemLanguageSelectionAndReadableUnits() {
+        XCTAssertEqual(AppLanguage(locale: Locale(identifier: "en_US")), .english)
+        XCTAssertEqual(AppLanguage(locale: Locale(identifier: "fr_FR")), .english)
+        XCTAssertEqual(AppLanguage(locale: Locale(identifier: "zh-Hans-CN")), .simplifiedChinese)
+        XCTAssertEqual(AppLanguage(locale: Locale(identifier: "zh-Hant-TW")), .english)
+        XCTAssertEqual(
+            CodexMenuBarCreditAppDelegate.UpdateStatus.idle.title(language: .english),
+            "Check for Updates"
+        )
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        let window = RateLimitWindow(
+            usedPercent: 12,
+            windowDurationMins: 300,
+            resetsAt: 1_000 + 1 * 60 * 60 + 58 * 60
+        )
+        XCTAssertEqual(
+            QuotaFormatter.windowDescription(
+                name: QuotaFormatter.windowTitle(for: 300, language: .english),
+                window: window,
+                now: now,
+                language: .english
+            ),
+            "5-hour usage limit: 88%, resets in 1 hour 58 minutes"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.resetCreditDescription(
+                at: 1_000 + 60 * 60,
+                now: now,
+                language: .english
+            ),
+            "expires in 1 hour"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.lastUpdated(
+                Date(timeIntervalSince1970: 1_000),
+                now: Date(timeIntervalSince1970: 1_068),
+                language: .english
+            ),
+            "1 minute 8 seconds ago"
+        )
+    }
+
     func testCodexBucketWinsOverLegacyBucket() throws {
         let json = """
         {
