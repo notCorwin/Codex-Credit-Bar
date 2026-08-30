@@ -1,6 +1,6 @@
 import Foundation
 
-struct RateLimitsResponse: Decodable {
+struct RateLimitsResponse: Decodable, Sendable {
     let rateLimits: RateLimitSnapshot
     let rateLimitsByLimitId: [String: RateLimitSnapshot]?
     let rateLimitResetCredits: RateLimitResetCreditsSummary?
@@ -14,7 +14,7 @@ struct RateLimitsResponse: Decodable {
     }
 }
 
-struct RateLimitSnapshot: Decodable, Equatable {
+struct RateLimitSnapshot: Decodable, Equatable, Sendable {
     let credits: CreditsSnapshot?
     let limitId: String?
     let planType: String?
@@ -22,32 +22,50 @@ struct RateLimitSnapshot: Decodable, Equatable {
     let secondary: RateLimitWindow?
 }
 
-struct RateLimitWindow: Decodable, Equatable {
+struct RateLimitWindow: Decodable, Equatable, Sendable {
     let usedPercent: Int
     let windowDurationMins: Int64?
     let resetsAt: Int64?
 
     var remainingPercent: Int {
-        max(0, min(100, 100 - usedPercent))
+        if usedPercent <= 0 { return 100 }
+        if usedPercent >= 100 { return 0 }
+        return 100 - usedPercent
     }
 }
 
-struct CreditsSnapshot: Decodable, Equatable {
+struct CreditsSnapshot: Decodable, Equatable, Sendable {
     let balance: String?
     let hasCredits: Bool
     let unlimited: Bool
 }
 
-struct RateLimitResetCreditsSummary: Decodable, Equatable {
+struct RateLimitResetCreditsSummary: Decodable, Equatable, Sendable {
     let availableCount: Int
     let credits: [RateLimitResetCredit]?
 }
 
-struct RateLimitResetCredit: Decodable, Equatable {
+struct RateLimitResetCredit: Decodable, Equatable, Sendable {
     let expiresAt: Int64?
+    let expirationIsKnown: Bool
+
+    init(expiresAt: Int64?, expirationIsKnown: Bool = true) {
+        self.expiresAt = expiresAt
+        self.expirationIsKnown = expirationIsKnown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        expiresAt = try container.decodeIfPresent(Int64.self, forKey: .expiresAt)
+        expirationIsKnown = container.contains(.expiresAt)
+    }
 }
 
-struct CodexQuota: Equatable {
+struct CodexQuota: Equatable, Sendable {
     private static let fiveHourWindowDurationMins: Int64 = 5 * 60
     private static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
 
@@ -110,6 +128,18 @@ struct CodexQuota: Equatable {
 
     var credits: CreditsSnapshot? {
         snapshot.credits
+    }
+
+    var resetCreditsForDisplay: [RateLimitResetCredit] {
+        guard availableResetCreditCount > 0 else {
+            return []
+        }
+        let visibleCredits = Array(resetCredits.prefix(availableResetCreditCount))
+        guard visibleCredits.count < availableResetCreditCount else {
+            return visibleCredits
+        }
+        // ponytail: collapse missing detail rows into one placeholder; add grouped counts if exact cardinality is needed.
+        return visibleCredits + [RateLimitResetCredit(expiresAt: nil, expirationIsKnown: false)]
     }
 
     var shouldDisplayCredits: Bool {

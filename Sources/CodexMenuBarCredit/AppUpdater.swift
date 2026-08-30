@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct AppUpdate {
+struct AppUpdate: Sendable {
     let name: String
     let revision: String
     let assetURL: URL
@@ -15,7 +15,7 @@ struct AppUpdate {
     }
 }
 
-enum AppUpdateError: LocalizedError {
+enum AppUpdateError: LocalizedError, Sendable {
     case notPackaged
     case noRelease
     case network(String)
@@ -50,11 +50,59 @@ enum AppUpdateError: LocalizedError {
     }
 }
 
-final class AppUpdater {
+private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    typealias OversizedHandler = @Sendable (URLSessionDownloadTask) -> Void
+
+    private let maximumBytes: Int64
+    var oversizedHandler: OversizedHandler?
+
+    init(maximumBytes: Int64) {
+        self.maximumBytes = maximumBytes
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {}
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesWritten > maximumBytes || totalBytesExpectedToWrite > maximumBytes else {
+            return
+        }
+        oversizedHandler?(downloadTask)
+    }
+}
+
+// task is protected independently; operationGeneration and installationInProgress share generationLock.
+// Installation work stays off the main actor.
+final class AppUpdater: @unchecked Sendable {
+    typealias CheckCompletion = @MainActor @Sendable (Result<AppUpdate?, AppUpdateError>) -> Void
+    typealias InstallCompletion = @MainActor @Sendable (Result<Void, AppUpdateError>) -> Void
+    typealias Relauncher = @Sendable (URL, URL) throws -> Void
+
     private static let appName = "Codex Credit Bar"
+    private static let assetName = "Codex.Credit.Bar.app.tar"
     private static let bundleIdentifier = "com.codexmenubarcredit.menu-bar"
     private static let executableName = "CodexMenuBarCredit"
+    private static let canonicalAssetURL = URL(
+        string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+    )!
     private static let maxAttempts = 3
+    // ponytail: cap release metadata before parsing; raise only if the API contract grows.
+    private static let maxReleaseMetadataBytes: Int64 = 4 * 1024 * 1024
+    // ponytail: cap tar listings to bound parser memory; raise with measured package growth.
+    private static let maxTarListingBytes = 4 * 1024 * 1024
+    // ponytail: cap extracted regular-file bytes to limit archive bombs; raise with measured app growth.
+    private static let maxExtractedPackageBytes: Int64 = 256 * 1024 * 1024
+    // ponytail: reject oversized tar files before invoking tar; raise with measured release size.
+    private static let maxDownloadedPackageBytes: Int64 = 256 * 1024 * 1024
 
     private struct Release: Decodable {
         let name: String?
@@ -65,7 +113,6 @@ final class AppUpdater {
 
     private struct Asset: Decodable {
         let name: String
-        let label: String?
         let browserDownloadUrl: URL
         let digest: String?
     }
@@ -73,21 +120,77 @@ final class AppUpdater {
     static let releaseAPIURL = URL(
         string: "https://api.github.com/repos/notCorwin/Codex-Credit-Bar/releases/tags/autobuild"
     )!
-    private let session: URLSession
+    private let metadataSession: URLSession
+    private let metadataDelegate: DownloadProgressDelegate
+    private let downloadSession: URLSession
+    private let downloadDelegate: DownloadProgressDelegate
+    private let currentAppURL: URL
+    private let relauncher: Relauncher
+    private let taskLock = NSLock()
+    private let generationLock = NSLock()
     private var task: URLSessionTask?
+    private var operationGeneration = 0
+    private var installationInProgress = false
+    private var oversizedMetadata = false
+    private var oversizedDownload = false
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(
+        session: URLSession = .shared,
+        currentAppURL: URL = Bundle.main.bundleURL,
+        relauncher: @escaping Relauncher = AppUpdater.defaultRelauncher
+    ) {
+        self.currentAppURL = currentAppURL
+        self.relauncher = relauncher
+        let metadataDelegate = DownloadProgressDelegate(maximumBytes: Self.maxReleaseMetadataBytes)
+        self.metadataDelegate = metadataDelegate
+        self.metadataSession = URLSession(
+            configuration: session.configuration,
+            delegate: metadataDelegate,
+            delegateQueue: nil
+        )
+        let downloadDelegate = DownloadProgressDelegate(maximumBytes: Self.maxDownloadedPackageBytes)
+        self.downloadDelegate = downloadDelegate
+        self.downloadSession = URLSession(
+            configuration: session.configuration,
+            delegate: downloadDelegate,
+            delegateQueue: nil
+        )
+        metadataDelegate.oversizedHandler = { [weak self] task in
+            self?.cancelOversizedMetadata(task)
+        }
+        downloadDelegate.oversizedHandler = { [weak self] task in
+            self?.cancelOversizedDownload(task)
+        }
     }
 
-    func check(completion: @escaping (Result<AppUpdate?, Error>) -> Void) {
-        guard Bundle.main.bundleURL.pathExtension == "app" else {
+    deinit {
+        metadataSession.invalidateAndCancel()
+        downloadSession.invalidateAndCancel()
+    }
+
+    @MainActor
+    func cancel() {
+        var shouldCancelTask = false
+        generationLock.lock()
+        if !installationInProgress {
+            operationGeneration += 1
+            shouldCancelTask = true
+        }
+        generationLock.unlock()
+        if shouldCancelTask {
+            cancelTask()
+        }
+    }
+
+    @MainActor
+    func check(completion: @escaping CheckCompletion) {
+        guard currentAppURL.pathExtension == "app" else {
             DispatchQueue.main.async {
                 completion(.failure(AppUpdateError.notPackaged))
             }
             return
         }
-        guard task == nil else {
+        guard !hasTask else {
             DispatchQueue.main.async {
                 completion(.failure(AppUpdateError.busy))
             }
@@ -99,72 +202,119 @@ final class AppUpdater {
 
     private func check(
         attempt: Int,
-        completion: @escaping (Result<AppUpdate?, Error>) -> Void
+        completion: @escaping CheckCompletion
     ) {
+        let generation = currentOperationGeneration()
         var request = URLRequest(url: Self.releaseAPIURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("CodexCreditBar", forHTTPHeaderField: "User-Agent")
-        let task = session.dataTask(with: request) { [weak self] data, response, error in
+        let task = metadataSession.downloadTask(with: request) { [weak self] location, response, error in
             guard let self else { return }
+            guard self.isCurrentOperation(generation) else { return }
 
+            if self.consumeOversizedMetadata() {
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.invalidResponse),
+                    generation: generation
+                )
+                return
+            }
             if let error {
-                if self.retryIfNeeded(attempt: attempt, error: error, operation: {
+                if self.retryIfNeeded(attempt: attempt, generation: generation, error: error, operation: {
                     self.check(attempt: attempt + 1, completion: completion)
                 }) {
                     return
                 }
-                self.finish(completion, with: .failure(AppUpdateError.network(error.localizedDescription)))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.network(error.localizedDescription)),
+                    generation: generation
+                )
                 return
             }
 
             guard let response = response as? HTTPURLResponse else {
-                self.finish(completion, with: .failure(AppUpdateError.invalidResponse))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.invalidResponse),
+                    generation: generation
+                )
                 return
             }
             if response.statusCode == 404 {
-                self.finish(completion, with: .failure(AppUpdateError.noRelease))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.noRelease),
+                    generation: generation
+                )
                 return
             }
-            if self.retryIfNeeded(attempt: attempt, statusCode: response.statusCode, operation: {
-                self.check(attempt: attempt + 1, completion: completion)
-            }) {
+            if response.expectedContentLength > Self.maxReleaseMetadataBytes {
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.invalidResponse),
+                    generation: generation
+                )
+                return
+            }
+            if self.retryIfNeeded(
+                attempt: attempt,
+                generation: generation,
+                statusCode: response.statusCode,
+                operation: {
+                    self.check(attempt: attempt + 1, completion: completion)
+                }
+            ) {
                 return
             }
 
-            let result: Result<AppUpdate?, Error>
+            let result: Result<AppUpdate?, AppUpdateError>
             if let error = Self.httpError(from: response) {
                 result = .failure(error)
-            } else if let data {
-                result = Self.parse(data: data)
             } else {
-                result = .failure(AppUpdateError.invalidResponse)
+                guard let location,
+                      let data = try? Data(contentsOf: location),
+                      Int64(data.count) <= Self.maxReleaseMetadataBytes else {
+                    self.finish(
+                        completion,
+                        with: .failure(AppUpdateError.invalidResponse),
+                        generation: generation
+                    )
+                    return
+                }
+                result = self.parse(data: data)
             }
 
-            DispatchQueue.main.async {
-                self.task = nil
-                completion(result)
-            }
+            self.finish(completion, with: result, generation: generation)
         }
-        self.task = task
+        setTask(task)
         task.resume()
     }
 
+    @MainActor
     func downloadAndInstall(
         _ update: AppUpdate,
-        completion: @escaping (Result<Void, Error>) -> Void
+        completion: @escaping InstallCompletion
     ) {
-        guard Bundle.main.bundleURL.pathExtension == "app" else {
+        guard currentAppURL.pathExtension == "app" else {
             DispatchQueue.main.async {
                 completion(.failure(AppUpdateError.notPackaged))
             }
             return
         }
-        guard task == nil else {
+        guard !hasTask else {
             DispatchQueue.main.async {
                 completion(.failure(AppUpdateError.busy))
+            }
+            return
+        }
+        guard Self.isCanonicalAssetURL(update.assetURL) else {
+            DispatchQueue.main.async {
+                completion(.failure(AppUpdateError.invalidResponse))
             }
             return
         }
@@ -175,56 +325,100 @@ final class AppUpdater {
     private func downloadAndInstall(
         _ update: AppUpdate,
         attempt: Int,
-        completion: @escaping (Result<Void, Error>) -> Void
+        completion: @escaping InstallCompletion
     ) {
+        let generation = currentOperationGeneration()
         var request = URLRequest(url: update.assetURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 5 * 60
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("CodexCreditBar", forHTTPHeaderField: "User-Agent")
-        let task = session.downloadTask(with: request) { [weak self] location, response, error in
+        let task = downloadSession.downloadTask(with: request) { [weak self] location, response, error in
             guard let self else { return }
+            guard self.isCurrentOperation(generation) else { return }
 
+            if self.consumeOversizedDownload() {
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.invalidPackage),
+                    generation: generation
+                )
+                return
+            }
             if let error {
-                if self.retryIfNeeded(attempt: attempt, error: error, operation: {
+                if self.retryIfNeeded(attempt: attempt, generation: generation, error: error, operation: {
                     self.downloadAndInstall(update, attempt: attempt + 1, completion: completion)
                 }) {
                     return
                 }
-                self.finish(completion, with: .failure(AppUpdateError.downloadFailed(error.localizedDescription)))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.downloadFailed(error.localizedDescription)),
+                    generation: generation
+                )
                 return
             }
 
             guard let response = response as? HTTPURLResponse else {
-                self.finish(completion, with: .failure(AppUpdateError.downloadFailed("GitHub 返回了无效响应。")))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.downloadFailed("GitHub 返回了无效响应。")),
+                    generation: generation
+                )
                 return
             }
             guard (200..<300).contains(response.statusCode) else {
-                if self.retryIfNeeded(attempt: attempt, statusCode: response.statusCode, operation: {
-                    self.downloadAndInstall(update, attempt: attempt + 1, completion: completion)
-                }) {
+                if self.retryIfNeeded(
+                    attempt: attempt,
+                    generation: generation,
+                    statusCode: response.statusCode,
+                    operation: {
+                        self.downloadAndInstall(update, attempt: attempt + 1, completion: completion)
+                    }
+                ) {
                     return
                 }
-                self.finish(completion, with: .failure(
-                    AppUpdateError.downloadFailed("GitHub HTTP 状态码：\(response.statusCode)")
-                ))
+                self.finish(
+                    completion,
+                    with: .failure(
+                        AppUpdateError.downloadFailed("GitHub HTTP 状态码：\(response.statusCode)")
+                    ),
+                    generation: generation
+                )
                 return
             }
             guard let location else {
-                self.finish(completion, with: .failure(AppUpdateError.downloadFailed("GitHub 返回了空文件。")))
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.downloadFailed("GitHub 返回了空文件。")),
+                    generation: generation
+                )
+                return
+            }
+            if response.expectedContentLength > Self.maxDownloadedPackageBytes {
+                self.finish(
+                    completion,
+                    with: .failure(AppUpdateError.invalidPackage),
+                    generation: generation
+                )
                 return
             }
 
             do {
                 try self.verifySHA256(of: location, expected: update.expectedSHA256)
+                guard self.beginInstallation(for: generation) else { return }
                 try self.install(downloadedFile: location, expectedRevision: update.revision)
-                self.finish(completion, with: .success(()))
+                self.finish(completion, with: .success(()), generation: generation)
             } catch {
-                self.finish(completion, with: .failure(error))
+                self.finish(
+                    completion,
+                    with: .failure(error as? AppUpdateError ?? .installFailed(error.localizedDescription)),
+                    generation: generation
+                )
             }
         }
-        self.task = task
+        setTask(task)
         task.resume()
     }
 
@@ -236,22 +430,22 @@ final class AppUpdater {
         return String(body[range]).lowercased()
     }
 
-    private static func parse(data: Data) -> Result<AppUpdate?, Error> {
-        let currentRevision = Bundle.main.object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String
-        return parse(data: data, currentRevision: currentRevision)
+    private func parse(data: Data) -> Result<AppUpdate?, AppUpdateError> {
+        let currentRevision = Bundle(url: currentAppURL)?
+            .object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String
+        return Self.parse(data: data, currentRevision: currentRevision)
     }
 
-    static func parse(data: Data, currentRevision: String?) -> Result<AppUpdate?, Error> {
+    static func parse(data: Data, currentRevision: String?) -> Result<AppUpdate?, AppUpdateError> {
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let release = try decoder.decode(Release.self, from: data)
-            guard let asset = release.assets.first(where: {
-                $0.label == "\(appName).app"
-                    || $0.name == "Codex.Credit.Bar.app.tar"
-                    || $0.name == "\(appName).app.tar"
-            }) else {
+            guard let asset = release.assets.first(where: { $0.name == Self.assetName }) else {
                 return .failure(AppUpdateError.assetMissing)
+            }
+            guard Self.isCanonicalAssetURL(asset.browserDownloadUrl) else {
+                return .failure(AppUpdateError.invalidResponse)
             }
 
             let expectedSHA256 = try normalizedSHA256(from: asset.digest)
@@ -317,7 +511,64 @@ final class AppUpdater {
             }
             root = candidate
         }
-        return root
+        return root == "\(appName).app" ? root : nil
+    }
+
+    static func archiveContainsUnsafeEntry(in listing: String) -> Bool {
+        listing.split(whereSeparator: \.isNewline).contains { line in
+            guard let type = line.first else { return false }
+            guard type == "-" || type == "d" else { return true }
+            guard let mode = line.split(whereSeparator: \.isWhitespace).first else { return true }
+            return mode.contains { character in
+                character == "s" || character == "S" || character == "t" || character == "T"
+            }
+        }
+    }
+
+    static func archiveExceedsSizeLimit(in listing: String) -> Bool {
+        var totalBytes: Int64 = 0
+        for line in listing.split(whereSeparator: \.isNewline) {
+            let fields = line.split(whereSeparator: \.isWhitespace)
+            guard fields.count >= 5,
+                  let size = Int64(fields[4]),
+                  size >= 0 else {
+                return true
+            }
+            let (newTotal, overflow) = totalBytes.addingReportingOverflow(size)
+            guard !overflow, newTotal <= Self.maxExtractedPackageBytes else {
+                return true
+            }
+            totalBytes = newTotal
+        }
+        return false
+    }
+
+    static func isPackageFileSizeAcceptable(_ size: Int64?) -> Bool {
+        guard let size, size >= 0 else { return false }
+        return size <= Self.maxDownloadedPackageBytes
+    }
+
+    static func isCanonicalAssetURL(_ url: URL) -> Bool {
+        url.absoluteString == Self.canonicalAssetURL.absoluteString
+    }
+
+    static func isExpectedExecutable(_ executableURL: URL, in appURL: URL) -> Bool {
+        let expectedURL = appURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent(Self.executableName)
+        return executableURL.standardizedFileURL.path == expectedURL.standardizedFileURL.path
+    }
+
+    static func isExecutableRegularFile(
+        atPath path: String,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular else {
+            return false
+        }
+        return fileManager.isExecutableFile(atPath: path)
     }
 
     private static func containsSymbolicLink(in directory: URL) -> Bool {
@@ -328,8 +579,11 @@ final class AppUpdater {
             return true
         }
         for case let url as URL in enumerator {
-            if let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
-               values.isSymbolicLink == true {
+            guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  let isSymbolicLink = values.isSymbolicLink else {
+                return true
+            }
+            if isSymbolicLink {
                 return true
             }
         }
@@ -352,40 +606,146 @@ final class AppUpdater {
 
     private func retryIfNeeded(
         attempt: Int,
+        generation: Int,
         error: Error? = nil,
         statusCode: Int? = nil,
-        operation: @escaping () -> Void
+        operation: @escaping @MainActor @Sendable () -> Void
     ) -> Bool {
         guard attempt < Self.maxAttempts, Self.shouldRetry(error: error, statusCode: statusCode) else {
             return false
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + TimeInterval(attempt)) {
-            operation()
+        DispatchQueue.main.asyncAfter(deadline: .now() + TimeInterval(attempt)) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                guard self.isCurrentOperation(generation) else { return }
+                operation()
+            }
         }
         return true
     }
 
-    private func finish<T>(
-        _ completion: @escaping (Result<T, Error>) -> Void,
-        with result: Result<T, Error>
+    private func currentOperationGeneration() -> Int {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return operationGeneration
+    }
+
+    private func isCurrentOperation(_ generation: Int) -> Bool {
+        currentOperationGeneration() == generation
+    }
+
+    private func beginInstallation(for generation: Int) -> Bool {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        guard operationGeneration == generation else { return false }
+        installationInProgress = true
+        return true
+    }
+
+    private func endInstallation() {
+        generationLock.lock()
+        installationInProgress = false
+        generationLock.unlock()
+    }
+
+    private func finish<T: Sendable>(
+        _ completion: @escaping @MainActor @Sendable (Result<T, AppUpdateError>) -> Void,
+        with result: Result<T, AppUpdateError>,
+        generation: Int
     ) {
-        DispatchQueue.main.async {
-            self.task = nil
+        Task { @MainActor in
+            guard self.isCurrentOperation(generation) else { return }
+            self.setTask(nil)
+            self.endInstallation()
             completion(result)
         }
     }
 
-    private func install(downloadedFile: URL, expectedRevision: String) throws {
+    private var hasTask: Bool {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        return task != nil
+    }
+
+    private func setTask(_ task: URLSessionTask?) {
+        taskLock.lock()
+        self.task = task
+        if task == nil {
+            oversizedMetadata = false
+            oversizedDownload = false
+        }
+        taskLock.unlock()
+    }
+
+    private func cancelTask() {
+        taskLock.lock()
+        let task = self.task
+        self.task = nil
+        oversizedMetadata = false
+        oversizedDownload = false
+        taskLock.unlock()
+        task?.cancel()
+    }
+
+    private func cancelOversizedMetadata(_ task: URLSessionDownloadTask) {
+        taskLock.lock()
+        guard self.task === task else {
+            taskLock.unlock()
+            return
+        }
+        oversizedMetadata = true
+        taskLock.unlock()
+        task.cancel()
+    }
+
+    private func cancelOversizedDownload(_ task: URLSessionDownloadTask) {
+        taskLock.lock()
+        guard self.task === task else {
+            taskLock.unlock()
+            return
+        }
+        oversizedDownload = true
+        taskLock.unlock()
+        task.cancel()
+    }
+
+    private func consumeOversizedDownload() -> Bool {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        let result = oversizedDownload
+        oversizedDownload = false
+        return result
+    }
+
+    private func consumeOversizedMetadata() -> Bool {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        let result = oversizedMetadata
+        oversizedMetadata = false
+        return result
+    }
+
+    func install(downloadedFile: URL, expectedRevision: String) throws {
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("CodexCreditBar-update-\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: temporaryDirectory) }
 
+        let downloadedFileSize = (try? fileManager.attributesOfItem(atPath: downloadedFile.path))?[.size]
+            .flatMap { ($0 as? NSNumber)?.int64Value }
+        guard Self.isPackageFileSizeAcceptable(downloadedFileSize) else {
+            throw AppUpdateError.invalidPackage
+        }
+
         let extractedDirectory = temporaryDirectory.appendingPathComponent("Extracted", isDirectory: true)
         try fileManager.createDirectory(at: extractedDirectory, withIntermediateDirectories: true)
-        guard let appRoot = Self.archiveAppRoot(
-            from: try runTar(arguments: ["-tf", downloadedFile.path], capturingOutput: true) ?? ""
-        ) else {
+        let listing = try runTar(arguments: ["-tf", downloadedFile.path], capturingOutput: true) ?? ""
+        guard let appRoot = Self.archiveAppRoot(from: listing) else {
+            throw AppUpdateError.invalidPackage
+        }
+        let detailedListing = try runTar(arguments: ["-tvf", downloadedFile.path], capturingOutput: true) ?? ""
+        guard !Self.archiveContainsUnsafeEntry(in: detailedListing),
+              !Self.archiveExceedsSizeLimit(in: detailedListing) else {
             throw AppUpdateError.invalidPackage
         }
         _ = try runTar(arguments: ["-xf", downloadedFile.path, "-C", extractedDirectory.path])
@@ -398,8 +758,8 @@ final class AppUpdater {
               bundle.bundleIdentifier == Self.bundleIdentifier,
               bundle.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "APPL",
               let executable = bundle.executableURL,
-              executable.lastPathComponent == Self.executableName,
-              fileManager.isExecutableFile(atPath: executable.path) else {
+              Self.isExpectedExecutable(executable, in: extractedApp),
+              Self.isExecutableRegularFile(atPath: executable.path, fileManager: fileManager) else {
             throw AppUpdateError.invalidPackage
         }
         if expectedRevision != "unknown" {
@@ -410,7 +770,7 @@ final class AppUpdater {
             }
         }
 
-        let currentApp = Bundle.main.bundleURL
+        let currentApp = currentAppURL
         guard currentApp.pathExtension == "app" else {
             throw AppUpdateError.notPackaged
         }
@@ -418,8 +778,10 @@ final class AppUpdater {
             .appendingPathComponent(".CodexCreditBar-update-\(UUID().uuidString).app", isDirectory: true)
         let backupApp = currentApp.deletingLastPathComponent()
             .appendingPathComponent(".CodexCreditBar-backup-\(UUID().uuidString).app", isDirectory: true)
+        var backupCreated = false
         do {
             try fileManager.copyItem(at: currentApp, to: backupApp)
+            backupCreated = true
             try fileManager.copyItem(at: extractedApp, to: stagedApp)
             _ = try fileManager.replaceItemAt(
                 currentApp,
@@ -429,22 +791,25 @@ final class AppUpdater {
             )
         } catch {
             try? fileManager.removeItem(at: stagedApp)
-            if fileManager.fileExists(atPath: currentApp.path) {
+            if backupCreated, !fileManager.fileExists(atPath: currentApp.path) {
+                do {
+                    try restoreBackup(at: backupApp, to: currentApp, fileManager: fileManager)
+                } catch {
+                    throw AppUpdateError.installFailed(
+                        "更新替换失败，且恢复旧版本失败：\(error.localizedDescription)"
+                    )
+                }
+            } else {
                 try? fileManager.removeItem(at: backupApp)
             }
             throw AppUpdateError.installFailed(error.localizedDescription)
         }
 
         do {
-            try relauncher(for: currentApp, backupURL: backupApp)
+            try relauncher(currentApp, backupApp)
         } catch {
             do {
-                _ = try fileManager.replaceItemAt(
-                    currentApp,
-                    withItemAt: backupApp,
-                    backupItemName: nil,
-                    options: []
-                )
+                try restoreBackup(at: backupApp, to: currentApp, fileManager: fileManager)
             } catch {
                 throw AppUpdateError.installFailed("无法启动更新后的 App，且恢复旧版本失败：\(error.localizedDescription)")
             }
@@ -452,9 +817,30 @@ final class AppUpdater {
         }
     }
 
+    private func restoreBackup(at backupApp: URL, to currentApp: URL, fileManager: FileManager) throws {
+        if fileManager.fileExists(atPath: currentApp.path) {
+            _ = try fileManager.replaceItemAt(
+                currentApp,
+                withItemAt: backupApp,
+                backupItemName: nil,
+                options: []
+            )
+        } else {
+            try fileManager.moveItem(at: backupApp, to: currentApp)
+        }
+    }
+
     private func verifySHA256(of file: URL, expected: String?) throws {
         guard let expected else { return }
-        let actual = SHA256.hash(data: try Data(contentsOf: file))
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let chunk = try handle.read(upToCount: 1024 * 1024) ?? Data()
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        let actual = hasher.finalize()
             .map { String(format: "%02x", $0) }
             .joined()
         guard actual == expected else {
@@ -478,7 +864,25 @@ final class AppUpdater {
         } catch {
             throw AppUpdateError.invalidPackage
         }
-        let outputData = outputPipe?.fileHandleForReading.readDataToEndOfFile()
+        let outputData: Data?
+        if let outputPipe {
+            var data = Data()
+            while true {
+                let chunk = outputPipe.fileHandleForReading.readData(ofLength: 64 * 1024)
+                if chunk.isEmpty {
+                    break
+                }
+                guard data.count + chunk.count <= Self.maxTarListingBytes else {
+                    process.terminate()
+                    process.waitUntilExit()
+                    throw AppUpdateError.invalidPackage
+                }
+                data.append(chunk)
+            }
+            outputData = data
+        } else {
+            outputData = nil
+        }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             throw AppUpdateError.invalidPackage
@@ -493,12 +897,39 @@ final class AppUpdater {
         return output
     }
 
-    private func relauncher(for appURL: URL, backupURL: URL) throws {
+    private static let defaultRelauncherScript = #"""
+    ready_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/CodexCreditBar-ready.XXXXXX") || exit 1
+    ready_file="$ready_dir/ready"
+    trap 'rm -rf "$ready_dir"' EXIT
+    CODEX_CREDIT_BAR_READY_FILE="$ready_file" "$1/Contents/MacOS/CodexMenuBarCredit" >/dev/null 2>&1 &
+    new_pid=$!
+    attempt=0
+    while [ "$attempt" -lt 50 ]; do
+        if [ -f "$ready_file" ]; then
+            sleep 0.2
+            if kill -0 "$new_pid" 2>/dev/null; then
+                kill "$2" 2>/dev/null || true
+                rm -rf "$3"
+                exit 0
+            fi
+            break
+        fi
+        if ! kill -0 "$new_pid" 2>/dev/null; then
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.1
+    done
+    kill "$new_pid" 2>/dev/null || true
+    exit 1
+    """#
+
+    private static let defaultRelauncher: Relauncher = { appURL, backupURL in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [
             "-c",
-            "sleep 1; if /usr/bin/open -n \"$1\"; then sleep 1; kill \"$2\"; rm -rf \"$3\"; else rm -rf \"$1\"; mv \"$3\" \"$1\"; fi",
+            defaultRelauncherScript,
             "Codex Credit Bar updater",
             appURL.path,
             String(ProcessInfo.processInfo.processIdentifier),
@@ -510,6 +941,10 @@ final class AppUpdater {
             try process.run()
         } catch {
             throw AppUpdateError.installFailed("无法启动更新后的 App：\(error.localizedDescription)")
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw AppUpdateError.installFailed("更新后的 App 未能完成启动交接。")
         }
     }
 }

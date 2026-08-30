@@ -106,8 +106,12 @@ enum QuotaFormatter {
 
     static func remainingTime(at timestamp: Int64?, now: Date = Date()) -> String? {
         guard let timestamp else { return nil }
-        let seconds = timestamp - Int64(now.timeIntervalSince1970)
-        guard seconds > 0 else { return "等待同步" }
+        guard let nowSeconds = wholeSeconds(from: now.timeIntervalSince1970) else {
+            return nil
+        }
+        guard timestamp > nowSeconds else { return "等待同步" }
+        let (seconds, overflow) = timestamp.subtractingReportingOverflow(nowSeconds)
+        guard !overflow else { return durationDescription(Int64.max) }
         return durationDescription(seconds)
     }
 
@@ -120,8 +124,15 @@ enum QuotaFormatter {
 
     static func resetCreditDescription(
         at timestamp: Int64?,
-        now: Date = Date()
+        now: Date = Date(),
+        expirationIsKnown: Bool = true
     ) -> String {
+        guard expirationIsKnown else {
+            return "到期时间未知"
+        }
+        guard let timestamp else {
+            return "永不过期"
+        }
         guard let remaining = remainingTime(at: timestamp, now: now) else {
             return "到期时间未知"
         }
@@ -154,9 +165,24 @@ enum QuotaFormatter {
     }
 
     static func lastUpdated(_ date: Date, now: Date = Date()) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        let elapsed = now.timeIntervalSince(date)
+        let seconds: Int64
+        if elapsed.isNaN || elapsed <= 0 {
+            seconds = 0
+        } else if elapsed.isInfinite || elapsed >= TimeInterval(Int64.max) {
+            seconds = Int64.max
+        } else {
+            seconds = Int64(elapsed)
+        }
         if seconds < 10 { return "刚刚" }
-        return "\(durationDescription(Int64(seconds), minuteName: "分钟"))前"
+        return "\(durationDescription(seconds, minuteName: "分钟"))前"
+    }
+
+    private static func wholeSeconds(from interval: TimeInterval) -> Int64? {
+        guard interval.isFinite else { return nil }
+        if interval <= TimeInterval(Int64.min) { return Int64.min }
+        if interval >= TimeInterval(Int64.max) { return Int64.max }
+        return Int64(interval)
     }
 
     private static func durationDescription(_ seconds: Int64, minuteName: String = "分") -> String {

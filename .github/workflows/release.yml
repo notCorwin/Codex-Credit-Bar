@@ -17,15 +17,16 @@ jobs:
     runs-on: macos-latest
     env:
       RELEASE_TAG: autobuild
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Build and test
         run: |
-          swift build
-          swift test
+          swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+          swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
 
       - name: Package app asset
         run: |
@@ -37,6 +38,7 @@ jobs:
 
       - name: Verify package
         run: |
+          test -f "dist/Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
           test -x "dist/Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
           test -f "dist/Codex Credit Bar.app/Contents/Info.plist"
           test -f Codex.Credit.Bar.app.tar
@@ -45,6 +47,7 @@ jobs:
       - name: Replace autobuild Release
         env:
           COMMIT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Editing a release keeps its original published_at. Delete and recreate
           # it so the fixed autobuild release always gets the current timestamp.

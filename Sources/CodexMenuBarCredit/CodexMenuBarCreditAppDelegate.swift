@@ -1,25 +1,38 @@
 import AppKit
 
+@MainActor
 final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private enum UpdateStatus {
+    nonisolated private static let maxErrorItemCharacters = 240
+
+    enum UpdateStatus {
+        case idle
         case checking
         case latest
+        case failed
         case available(String)
 
         var title: String {
             switch self {
+            case .idle:
+                return "检查更新"
             case .checking:
                 return "正在检查..."
             case .latest:
                 return "已是最新版本"
+            case .failed:
+                return "检查更新失败"
             case .available(let revision):
                 return "有最新版本可用 · \(revision)"
             }
         }
 
         var isInteractive: Bool {
-            if case .available = self { return true }
-            return false
+            switch self {
+            case .idle, .failed, .available:
+                return true
+            case .checking, .latest:
+                return false
+            }
         }
     }
 
@@ -28,13 +41,17 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
+    private var refreshRetryWorkItem: DispatchWorkItem?
+    private var refreshRetryGeneration = 0
     private var updateCheckTimer: Timer?
     private var isRefreshing = false
+    private var isTerminating = false
     private var quota: CodexQuota?
     private var lastError: Error?
     private var isCheckingForUpdate = false
-    private var lastResolvedUpdateStatus: UpdateStatus = .latest
-    private var displayedUpdateStatus: UpdateStatus = .checking
+    private var isInstallingUpdate = false
+    private var lastResolvedUpdateStatus: UpdateStatus = .idle
+    private var displayedUpdateStatus: UpdateStatus = .idle
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -49,7 +66,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         keyEquivalent: ""
     )
     private lazy var checkForUpdatesItem = NSMenuItem(
-        title: UpdateStatus.checking.title,
+        title: UpdateStatus.idle.title,
         action: #selector(checkForUpdatesNow),
         keyEquivalent: ""
     )
@@ -63,6 +80,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureMenu()
+        signalReadinessIfRequested()
         refreshNow()
         let refreshTimer = Timer(
             timeInterval: 10,
@@ -83,8 +101,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        isTerminating = true
         refreshTimer?.invalidate()
+        cancelRefreshRetry()
         updateCheckTimer?.invalidate()
+        updater.cancel()
         client.stop()
     }
 
@@ -98,14 +119,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func refreshNowWithRetry(allowingRetry: Bool) {
-        guard !isRefreshing else { return }
+        cancelRefreshRetry()
+        guard !isTerminating, !isRefreshing else { return }
         isRefreshing = true
         if quota == nil {
             renderLoading()
         }
 
         client.fetchRateLimits { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.isTerminating else { return }
             isRefreshing = false
 
             switch result {
@@ -117,12 +139,25 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 lastError = error
                 renderCurrentState()
                 if allowingRetry {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                        self?.refreshNowWithRetry(allowingRetry: false)
+                    let generation = refreshRetryGeneration
+                    let retry = DispatchWorkItem { [weak self] in
+                        guard let self,
+                              !self.isTerminating,
+                              self.refreshRetryGeneration == generation else { return }
+                        self.refreshRetryWorkItem = nil
+                        self.refreshNowWithRetry(allowingRetry: false)
                     }
+                    refreshRetryWorkItem = retry
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: retry)
                 }
             }
         }
+    }
+
+    private func cancelRefreshRetry() {
+        refreshRetryWorkItem?.cancel()
+        refreshRetryWorkItem = nil
+        refreshRetryGeneration += 1
     }
 
     @objc private func openChatGPT() {
@@ -157,7 +192,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
-        button.title = statusTitle(for: nil)
+        setStatusButtonTitle(statusTitle(for: nil))
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         button.toolTip = "ChatGPT 使用限额"
         button.setAccessibilityLabel("ChatGPT 使用限额")
@@ -194,7 +229,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func renderLoading() {
-        statusItem.button?.title = statusTitle(for: nil)
+        setStatusButtonTitle(statusTitle(for: nil))
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
@@ -223,7 +258,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderQuota(_ quota: CodexQuota) {
         let now = Date()
-        statusItem.button?.title = statusTitle(for: quota, now: now)
+        setStatusButtonTitle(statusTitle(for: quota, now: now))
         headerItem.title = "ChatGPT \(quota.planName)"
         let windows = quota.windowsForDisplay
         renderWindowItem(primaryItem, window: windows.indices.contains(0) ? windows[0] : nil, now: now)
@@ -243,7 +278,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func renderErrorWithoutQuota() {
-        statusItem.button?.title = "!"
+        setStatusButtonTitle("!")
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
@@ -260,6 +295,12 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             includingProductName: false,
             now: now
         )
+    }
+
+    private func setStatusButtonTitle(_ title: String) {
+        guard let button = statusItem.button else { return }
+        button.title = title
+        button.setAccessibilityValue(title)
     }
 
     private func renderWindowItem(_ item: NSMenuItem, window: RateLimitWindow?, now: Date) {
@@ -281,16 +322,17 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         now: Date
     ) {
         clearResetCreditItems()
-        guard quota.availableResetCreditCount > 0 else {
+        let credits = quota.resetCreditsForDisplay
+        guard !credits.isEmpty else {
             return
         }
 
         let insertionIndex = menu.index(of: actionSeparator)
         guard insertionIndex >= 0 else { return }
 
-        for credit in quota.resetCredits {
+        for credit in credits {
             let item = NSMenuItem(
-                title: "使用限额重置 · \(QuotaFormatter.resetCreditDescription(at: credit.expiresAt, now: now))",
+                title: "使用限额重置 · \(QuotaFormatter.resetCreditDescription(at: credit.expiresAt, now: now, expirationIsKnown: credit.expirationIsKnown))",
                 action: nil,
                 keyEquivalent: ""
             )
@@ -314,20 +356,28 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
         checkForUpdatesItem.title = title
         checkForUpdatesItem.attributedTitle = nil
-        checkForUpdatesItem.isEnabled = displayedUpdateStatus.isInteractive
+        checkForUpdatesItem.isEnabled = !isInstallingUpdate && displayedUpdateStatus.isInteractive
     }
 
     private func renderErrorItem() {
         if let lastError {
-            errorItem.title = "连接提示：\(lastError.localizedDescription)"
+            errorItem.title = "连接提示：\(Self.compactErrorMessage(lastError.localizedDescription))"
             errorItem.isHidden = false
         } else {
             errorItem.isHidden = true
         }
     }
 
+    nonisolated static func compactErrorMessage(_ message: String) -> String {
+        let singleLine = message.components(separatedBy: .newlines).joined(separator: " ")
+        guard singleLine.count > maxErrorItemCharacters else {
+            return singleLine
+        }
+        return String(singleLine.prefix(maxErrorItemCharacters)) + "…"
+    }
+
     private func checkForUpdates(silently: Bool) {
-        guard !isCheckingForUpdate else { return }
+        guard !isCheckingForUpdate, !isInstallingUpdate else { return }
         isCheckingForUpdate = true
         applyUpdateStatus(.checking)
         updater.check { [weak self] result in
@@ -352,6 +402,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                     presentUpdate(update)
                 }
             case .failure(let error):
+                self.lastResolvedUpdateStatus = .failed
                 applyUpdateStatus(lastResolvedUpdateStatus)
                 if !silently {
                     showAlert(title: "检查更新失败", message: error.localizedDescription)
@@ -374,7 +425,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         alert.addButton(withTitle: "稍后")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        checkForUpdatesItem.isEnabled = false
+        isInstallingUpdate = true
+        renderUpdateItem()
         updater.downloadAndInstall(update) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -382,7 +434,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 // AppUpdater launches the new bundle before its handoff process exits this one.
                 break
             case .failure(let error):
-                checkForUpdatesItem.isEnabled = true
+                isInstallingUpdate = false
+                renderUpdateItem()
                 showAlert(title: "更新失败", message: error.localizedDescription)
             }
         }
@@ -394,5 +447,19 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         alert.informativeText = message
         alert.addButton(withTitle: "好")
         alert.runModal()
+    }
+
+    private func signalReadinessIfRequested() {
+        guard let path = Self.readinessMarkerPath(in: ProcessInfo.processInfo.environment) else {
+            return
+        }
+        FileManager.default.createFile(atPath: path, contents: Data())
+    }
+
+    nonisolated static func readinessMarkerPath(in environment: [String: String]) -> String? {
+        guard let path = environment["CODEX_CREDIT_BAR_READY_FILE"], !path.isEmpty else {
+            return nil
+        }
+        return path
     }
 }
