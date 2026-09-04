@@ -250,6 +250,57 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(quota.planName, "Plus")
     }
 
+    func testCurrentRateLimitPayloadDecodes() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "limitId": "codex",
+            "limitName": "Codex",
+            "primary": { "usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1784246400 },
+            "secondary": null,
+            "rateLimitReachedType": "rate_limit_reached",
+            "spendControlReached": false,
+            "individualLimit": {
+              "limit": "1000",
+              "used": "250",
+              "remainingPercent": 75,
+              "resetsAt": 1784246400
+            }
+          },
+          "rateLimitsByLimitId": {
+            "codex": {
+              "limitId": "codex",
+              "primary": { "usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1784246400 }
+            }
+          },
+          "rateLimitResetCredits": {
+            "availableCount": 1,
+            "credits": [{
+              "id": "reset-1",
+              "resetType": "codexRateLimits",
+              "status": "available",
+              "grantedAt": 1781654400,
+              "expiresAt": 1784246400,
+              "title": "Rate-limit reset",
+              "description": "Reset an eligible Codex rate-limit window."
+            }]
+          },
+          "accountId": "account-1"
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(RateLimitsResponse.self, from: json)
+
+        XCTAssertEqual(response.accountId, "account-1")
+        XCTAssertEqual(response.rateLimits.limitName, "Codex")
+        XCTAssertEqual(response.rateLimits.rateLimitReachedType, "rate_limit_reached")
+        XCTAssertEqual(response.rateLimits.spendControlReached, false)
+        XCTAssertEqual(response.rateLimits.individualLimit?.remainingPercent, 75)
+        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.id, "reset-1")
+        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.status, "available")
+        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.grantedAt, 1781654400)
+    }
+
     func testLegacyBucketIsUsedWhenNoCodexMapExists() throws {
         let json = """
         {
@@ -822,6 +873,72 @@ final class QuotaTests: XCTestCase {
         }
 
         wait(for: [expectation], timeout: 5)
+    }
+
+    func testCodexClientUsesCurrentAppServerWireShape() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)")
+        let executable = directory.appendingPathComponent("codex")
+        let argumentsMarker = directory.appendingPathComponent("arguments")
+        let requestsMarker = directory.appendingPathComponent("requests")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let script = #"""
+        #!/usr/bin/env sh
+        printf '%s\n' "$@" > "$ARGUMENTS_MARKER"
+        while IFS= read -r line; do
+          printf '%s\n' "$line" >> "$REQUESTS_MARKER"
+          id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+          case "$line" in
+            *'"method":"initialize"'*) printf '{"id":%s,"result":{}}\n' "$id" ;;
+            *'rateLimits'*) printf '{"id":%s,"result":{"rateLimits":{}}}\n' "$id" ;;
+          esac
+        done
+        """#
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: executable.path
+        )
+
+        let client = CodexAppServerClient(environment: [
+            "CODEX_BIN": executable.path,
+            "PATH": "",
+            "ARGUMENTS_MARKER": argumentsMarker.path,
+            "REQUESTS_MARKER": requestsMarker.path
+        ])
+        defer { client.stop() }
+        let expectation = expectation(description: "current app-server protocol completes")
+        client.fetchRateLimits { result in
+            guard case .success = result else {
+                XCTFail("Expected the current app-server protocol to complete")
+                expectation.fulfill()
+                return
+            }
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5)
+
+        let arguments = try String(contentsOf: argumentsMarker, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+        XCTAssertEqual(arguments, ["app-server"])
+
+        let requestLines = try String(contentsOf: requestsMarker, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+        XCTAssertEqual(requestLines.count, 3)
+        let requests = try requestLines.map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+
+        let initializeParams = try XCTUnwrap(requests[0]["params"] as? [String: Any])
+        XCTAssertNil(initializeParams["capabilities"])
+        XCTAssertEqual(requests[1]["method"] as? String, "initialized")
+        XCTAssertNil(requests[1]["params"])
+        XCTAssertEqual(requests[2]["method"] as? String, "account/rateLimits/read")
+        XCTAssertNil(requests[2]["params"])
     }
 
     func testCodexClientPreservesConfiguredPathPrecedence() throws {

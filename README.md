@@ -73,7 +73,7 @@ Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex
 
 1. 已成功执行 `codex login`，且当前用户与运行 App 的用户一致。
 2. Codex CLI 可执行文件位于 `PATH`、`CODEX_BIN` 或常见安装路径（包括 Homebrew、npm、Volta 和 asdf 路径）。
-3. `codex app-server --stdio` 可以正常启动；终端中可用该命令进行诊断。
+3. `codex app-server` 可以正常启动；终端中可用该命令进行诊断。
 4. 若 macOS 使用系统代理或 PAC，确保代理程序正在运行；App 会解析系统设置并传递给 Codex CLI。
 
 更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新只接受仓库发布的 `Codex Credit Bar.app`（底层为 `.tar`）附件，不会打开网页安装。

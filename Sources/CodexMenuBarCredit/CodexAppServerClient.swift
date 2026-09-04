@@ -106,7 +106,7 @@ final class CodexAppServerClient: @unchecked Sendable {
         let error = Pipe()
 
         process.executableURL = executableURL
-        process.arguments = ["app-server", "--stdio"]
+        process.arguments = ["app-server"]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = error
@@ -176,8 +176,7 @@ final class CodexAppServerClient: @unchecked Sendable {
                 "name": "codex-credit-bar",
                 "title": "Codex Credit Bar",
                 "version": "1.0.0"
-            ],
-            "capabilities": [String: Any]()
+            ]
         ]
 
         sendRequest(method: "initialize", params: params) { [weak self] result in
@@ -185,7 +184,7 @@ final class CodexAppServerClient: @unchecked Sendable {
             switch result {
             case .success:
                 initialized = true
-                sendNotification(method: "initialized", params: [:])
+                sendNotification(method: "initialized")
                 let completions = waitingForReady
                 waitingForReady.removeAll()
                 for completion in completions {
@@ -199,7 +198,7 @@ final class CodexAppServerClient: @unchecked Sendable {
     }
 
     private func sendRateLimits(completion: @escaping Completion) {
-        sendRequest(method: "account/rateLimits/read", params: [:]) { [weak self] result in
+        sendRequest(method: "account/rateLimits/read") { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let data):
@@ -221,7 +220,7 @@ final class CodexAppServerClient: @unchecked Sendable {
 
     private func sendRequest(
         method: String,
-        params: [String: Any],
+        params: [String: Any]? = nil,
         completion: @escaping (Result<Data, Error>) -> Void
     ) {
         let id = nextRequestID
@@ -238,11 +237,13 @@ final class CodexAppServerClient: @unchecked Sendable {
         requestTimeouts[id] = timeout
         stateQueue.asyncAfter(deadline: .now() + requestTimeout, execute: timeout)
 
-        let request: [String: Any] = [
+        var request: [String: Any] = [
             "id": id,
-            "method": method,
-            "params": params
+            "method": method
         ]
+        if let params {
+            request["params"] = params
+        }
 
         do {
             guard let inputPipe else {
@@ -263,10 +264,9 @@ final class CodexAppServerClient: @unchecked Sendable {
         }
     }
 
-    private func sendNotification(method: String, params: [String: Any]) {
+    private func sendNotification(method: String) {
         let notification: [String: Any] = [
-            "method": method,
-            "params": params
+            "method": method
         ]
         do {
             var data = try JSONSerialization.data(withJSONObject: notification)
