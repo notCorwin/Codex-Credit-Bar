@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     nonisolated private static let maxErrorItemCharacters = 240
+    private static let projectURL = URL(string: "https://github.com/notCorwin/Codex-Credit-Bar")!
 
     enum UpdateStatus {
         case idle
@@ -46,6 +47,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private let menu = NSMenu()
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
+    private var menuRefreshTimer: Timer?
     private var refreshRetryWorkItem: DispatchWorkItem?
     private var refreshRetryGeneration = 0
     private var updateCheckTimer: Timer?
@@ -55,8 +57,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var lastError: Error?
     private var isCheckingForUpdate = false
     private var isInstallingUpdate = false
-    private var lastResolvedUpdateStatus: UpdateStatus = .idle
     private var displayedUpdateStatus: UpdateStatus = .idle
+    private var lastUpdateCheckAt: Date?
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -68,6 +70,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private lazy var openChatGPTItem = NSMenuItem(
         title: AppLocalization.text(.openChatGPT, language: language),
         action: #selector(openChatGPT),
+        keyEquivalent: ""
+    )
+    private lazy var starProjectItem = NSMenuItem(
+        title: AppLocalization.text(.starProject, language: language),
+        action: #selector(starProject),
+        keyEquivalent: ""
+    )
+    private lazy var turnOffDisplayItem = NSMenuItem(
+        title: AppLocalization.text(.turnOffDisplay, language: language),
+        action: #selector(turnOffDisplay),
         keyEquivalent: ""
     )
     private lazy var checkForUpdatesItem = NSMenuItem(
@@ -88,7 +100,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         signalReadinessIfRequested()
         refreshNow()
         let refreshTimer = Timer(
-            timeInterval: 10,
+            timeInterval: 15,
             target: self,
             selector: #selector(refreshNow),
             userInfo: nil,
@@ -96,18 +108,31 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         )
         RunLoop.main.add(refreshTimer, forMode: .common)
         self.refreshTimer = refreshTimer
-        updateCheckTimer = Timer.scheduledTimer(
-            timeInterval: 60 * 60,
+        let menuRefreshTimer = Timer(
+            timeInterval: 1,
+            target: self,
+            selector: #selector(refreshMenuUI),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(menuRefreshTimer, forMode: .common)
+        self.menuRefreshTimer = menuRefreshTimer
+        let updateCheckTimer = Timer(
+            timeInterval: 60,
             target: self,
             selector: #selector(checkForUpdatesAutomatically),
             userInfo: nil,
             repeats: true
         )
+        RunLoop.main.add(updateCheckTimer, forMode: .common)
+        self.updateCheckTimer = updateCheckTimer
+        checkForUpdates(silently: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
         refreshTimer?.invalidate()
+        menuRefreshTimer?.invalidate()
         cancelRefreshRetry()
         updateCheckTimer?.invalidate()
         updater.cancel()
@@ -185,12 +210,56 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
     }
 
+    @objc private func starProject() {
+        guard NSWorkspace.shared.open(Self.projectURL) else {
+            showAlert(
+                title: AppLocalization.text(.cannotOpenProjectTitle, language: language),
+                message: AppLocalization.text(.tryAgain, language: language)
+            )
+            return
+        }
+    }
+
+    @objc private func turnOffDisplay() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["displaysleepnow"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            showAlert(
+                title: AppLocalization.text(.cannotTurnOffDisplayTitle, language: language),
+                message: AppLocalization.text(.tryAgain, language: language)
+            )
+            return
+        }
+        guard process.terminationStatus == 0 else {
+            showAlert(
+                title: AppLocalization.text(.cannotTurnOffDisplayTitle, language: language),
+                message: AppLocalization.text(.tryAgain, language: language)
+            )
+            return
+        }
+    }
+
     @objc private func checkForUpdatesNow() {
         checkForUpdates(silently: false)
     }
 
     @objc private func checkForUpdatesAutomatically() {
         checkForUpdates(silently: true)
+    }
+
+    @objc private func refreshMenuUI() {
+        guard !isTerminating else { return }
+        if quota != nil || lastError != nil {
+            renderCurrentState()
+        } else {
+            renderLoading()
+        }
     }
 
     @objc private func quit() {
@@ -227,11 +296,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         menu.addItem(actionSeparator)
         menu.addItem(errorItem)
         menu.addItem(openChatGPTItem)
+        menu.addItem(starProjectItem)
+        menu.addItem(turnOffDisplayItem)
         menu.addItem(checkForUpdatesItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         openChatGPTItem.target = self
+        starProjectItem.target = self
+        turnOffDisplayItem.target = self
         checkForUpdatesItem.target = self
         quitItem.target = self
     }
@@ -370,8 +443,13 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderUpdateItem() {
         var title = displayedUpdateStatus.title(language: language)
-        if let fetchedAt = quota?.fetchedAt {
-            title += " · \(QuotaFormatter.lastUpdated(fetchedAt, language: language))"
+        switch displayedUpdateStatus {
+        case .idle, .checking:
+            break
+        case .latest, .failed, .available:
+            if let lastUpdateCheckAt {
+                title += " · \(QuotaFormatter.lastUpdated(lastUpdateCheckAt, language: language))"
+            }
         }
         checkForUpdatesItem.title = title
         checkForUpdatesItem.attributedTitle = nil
@@ -409,8 +487,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
             switch result {
             case .success(let update):
+                lastUpdateCheckAt = Date()
                 guard let update else {
-                    self.lastResolvedUpdateStatus = .latest
                     self.applyUpdateStatus(.latest)
                     if !silently {
                         showAlert(
@@ -422,14 +500,13 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 }
                 let revision = String(update.revision.prefix(7))
                 let status = UpdateStatus.available(revision)
-                self.lastResolvedUpdateStatus = status
                 self.applyUpdateStatus(status)
                 if !silently {
                     presentUpdate(update)
                 }
             case .failure(let error):
-                self.lastResolvedUpdateStatus = .failed
-                applyUpdateStatus(lastResolvedUpdateStatus)
+                lastUpdateCheckAt = Date()
+                applyUpdateStatus(.failed)
                 if !silently {
                     showAlert(
                         title: AppLocalization.text(.updateFailed, language: language),

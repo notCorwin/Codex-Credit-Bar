@@ -29,10 +29,14 @@ enum AppLocalization {
         case updateFailed
         case updateAvailable
         case openChatGPT
+        case starProject
+        case turnOffDisplay
         case quit
         case findChatGPTTitle
         case findChatGPTMessage
         case cannotOpenChatGPTTitle
+        case cannotOpenProjectTitle
+        case cannotTurnOffDisplayTitle
         case tryAgain
         case chatGPTUsageLimit
         case resetCredit
@@ -112,10 +116,14 @@ enum AppLocalization {
         .updateFailed: "Update Check Failed",
         .updateAvailable: "Latest version available · %@",
         .openChatGPT: "Open ChatGPT",
+        .starProject: "Star This Project",
+        .turnOffDisplay: "Turn Off Display",
         .quit: "Quit Codex Credit Bar",
         .findChatGPTTitle: "ChatGPT App Not Found",
         .findChatGPTMessage: "Please install the ChatGPT macOS app first. The app will not open a webpage.",
         .cannotOpenChatGPTTitle: "Unable to Open ChatGPT App",
+        .cannotOpenProjectTitle: "Unable to Open Project Page",
+        .cannotTurnOffDisplayTitle: "Unable to Turn Off Display",
         .tryAgain: "Please try again.",
         .chatGPTUsageLimit: "ChatGPT usage limits",
         .resetCredit: "Usage limit reset · %@",
@@ -187,10 +195,14 @@ enum AppLocalization {
         .updateFailed: "检查更新失败",
         .updateAvailable: "有最新版本可用 · %@",
         .openChatGPT: "打开 ChatGPT",
+        .starProject: "Star 此项目",
+        .turnOffDisplay: "熄屏",
         .quit: "退出 Codex Credit Bar",
         .findChatGPTTitle: "找不到 ChatGPT App",
         .findChatGPTMessage: "请先安装 ChatGPT macOS App。应用不会打开网页。",
         .cannotOpenChatGPTTitle: "无法打开 ChatGPT App",
+        .cannotOpenProjectTitle: "无法打开项目页面",
+        .cannotTurnOffDisplayTitle: "无法熄屏",
         .tryAgain: "请稍后重试。",
         .chatGPTUsageLimit: "ChatGPT 使用限额",
         .resetCredit: "使用限额重置 · %@",
@@ -214,16 +226,16 @@ enum AppLocalization {
         .weeklyLimit: "每周使用限额",
         .quota: "额度",
         .weeklyQuota: "周额度",
-        .dayQuota: "%@天额度",
-        .hourQuota: "%@小时额度",
-        .minuteQuota: "%@分钟额度",
+        .dayQuota: "%@ 天额度",
+        .hourQuota: "%@ 小时额度",
+        .minuteQuota: "%@ 分钟额度",
         .resetIn: "%@后",
         .unknownExpiration: "到期时间未知",
         .neverExpires: "永不过期",
         .expired: "已到期",
         .expiresIn: "%@后到期",
         .justNow: "刚刚",
-        .ago: "%@前",
+        .ago: "%@之前",
         .codexInputUnavailable: "Codex 输入管道不可用",
         .codexInvalidResponseID: "Codex 响应的 id 无效",
         .codexUnknownError: "Codex 返回了未知错误",

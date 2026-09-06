@@ -315,7 +315,7 @@ final class QuotaTests: XCTestCase {
         let quota = CodexQuota(response: response)
 
         XCTAssertEqual(quota.statusWindow?.remainingPercent, 75)
-        XCTAssertEqual(QuotaFormatter.windowName(for: 60), "1小时额度")
+        XCTAssertEqual(QuotaFormatter.windowName(for: 60), "1 小时额度")
     }
 
     func testResetDescriptionUsesReadableChineseUnits() {
@@ -340,7 +340,7 @@ final class QuotaTests: XCTestCase {
                 window: window,
                 now: now
             ),
-            "5 小时使用限额：88%，1 小时 58 分后重置"
+            "5 小时使用限额：88%，1 小时 58 分钟后重置"
         )
     }
 
@@ -356,11 +356,11 @@ final class QuotaTests: XCTestCase {
         )
         XCTAssertEqual(
             QuotaFormatter.remainingTime(at: 1_000 + 12 * 60 * 60 + 58 * 60, now: now),
-            "12 小时 58 分"
+            "12 小时 58 分钟"
         )
         XCTAssertEqual(
             QuotaFormatter.remainingTime(at: 1_000 + 6 * 60 + 44, now: now),
-            "6 分 44 秒"
+            "6 分钟 44 秒"
         )
         XCTAssertEqual(QuotaFormatter.remainingTime(at: 1_000 + 32, now: now), "32 秒")
     }
@@ -527,7 +527,7 @@ final class QuotaTests: XCTestCase {
                 Date(timeIntervalSince1970: 1_000),
                 now: Date(timeIntervalSince1970: 1_068)
             ),
-            "1 分钟 8 秒前"
+            "1 分钟 8 秒之前"
         )
     }
 
@@ -578,7 +578,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "12.50"
+            "✨12.50"
         )
         XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "积分剩余：12.50")
     }
@@ -603,7 +603,7 @@ final class QuotaTests: XCTestCase {
                 includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
-            "3 小时 32 分"
+            "3 小时 32 分钟"
         )
     }
 
@@ -623,7 +623,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "12.50"
+            "✨12.50"
         )
     }
 
@@ -658,7 +658,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: creditQuota, includingProductName: false),
-            "90.32"
+            "✨90.32"
         )
 
         let noCreditJSON = """
@@ -678,7 +678,7 @@ final class QuotaTests: XCTestCase {
                 includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
-            "3 小时 32 分"
+            "3 小时 32 分钟"
         )
     }
 

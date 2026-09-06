@@ -22,7 +22,7 @@ enum QuotaFormatter {
                 value = "\(window.remainingPercent)%"
             } else if quota.shouldDisplayCredits,
                       let balance = creditsBalance(for: quota.credits) {
-                value = balance
+                value = "✨\(balance)"
             } else if let remaining = remainingTime(at: window.resetsAt, now: now, language: language) {
                 value = remaining
             } else {
@@ -140,9 +140,9 @@ enum QuotaFormatter {
         }
         let (seconds, overflow) = timestamp.subtractingReportingOverflow(nowSeconds)
         guard !overflow else {
-            return durationDescription(Int64.max, language: language)
+            return durationDescription(Int64.max, longMinute: true, language: language)
         }
-        return durationDescription(seconds, language: language)
+        return durationDescription(seconds, longMinute: true, language: language)
     }
 
     static func resetDescription(
