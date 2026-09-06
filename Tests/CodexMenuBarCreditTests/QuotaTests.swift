@@ -607,6 +607,30 @@ final class QuotaTests: XCTestCase {
         )
     }
 
+    func testBothWindowsExhaustedWithoutCreditsShowsWeeklyResetCountdown() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 319600 },
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(
+                for: quota,
+                includingProductName: false,
+                now: Date(timeIntervalSince1970: 1_000)
+            ),
+            "3 天 16 小时"
+        )
+    }
+
     func testFiveHourExhaustionUsesCreditsBeforeWeeklyPercentage() throws {
         let json = """
         {
@@ -1623,6 +1647,7 @@ final class QuotaTests: XCTestCase {
         let json = """
         {
           "name": "autobuild",
+          "published_at": "2026-09-07T00:00:00Z",
           "body": "没有提交信息",
           "target_commitish": "\(releaseRevision)",
           "assets": [
@@ -1644,6 +1669,7 @@ final class QuotaTests: XCTestCase {
         }
         XCTAssertEqual(update?.revision, releaseRevision)
         XCTAssertEqual(update?.expectedSHA256, digest.lowercased())
+        XCTAssertEqual(update?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
     }
 
     func testReleaseRejectsUntrustedAssetURL() throws {

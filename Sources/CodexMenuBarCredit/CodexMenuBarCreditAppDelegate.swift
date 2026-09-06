@@ -59,7 +59,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var isCheckingForUpdate = false
     private var isInstallingUpdate = false
     private var displayedUpdateStatus: UpdateStatus = .idle
-    private var lastUpdateCheckAt: Date?
+    private var lastUpdatePublishedAt: Date?
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -474,9 +474,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         switch displayedUpdateStatus {
         case .idle, .checking:
             break
-        case .latest, .failed, .available:
-            if let lastUpdateCheckAt {
-                title += " · \(QuotaFormatter.lastUpdated(lastUpdateCheckAt, language: language))"
+        case .latest, .failed:
+            break
+        case .available:
+            if let lastUpdatePublishedAt {
+                let published = AppLocalization.format(
+                    .publishedAgo,
+                    language: language,
+                    QuotaFormatter.lastUpdated(lastUpdatePublishedAt, language: language)
+                )
+                title += " · \(published)"
             }
         }
         checkForUpdatesItem.title = title
@@ -520,7 +527,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
             switch result {
             case .success(let update):
-                lastUpdateCheckAt = Date()
+                lastUpdatePublishedAt = update?.publishedAt
                 guard let update else {
                     self.applyUpdateStatus(.latest)
                     if !silently {
@@ -538,7 +545,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                     presentUpdate(update)
                 }
             case .failure(let error):
-                lastUpdateCheckAt = Date()
+                lastUpdatePublishedAt = nil
                 applyUpdateStatus(.failed)
                 if !silently {
                     showAlert(

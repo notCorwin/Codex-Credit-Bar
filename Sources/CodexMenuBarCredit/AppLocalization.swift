@@ -70,6 +70,7 @@ enum AppLocalization {
         case expiresIn
         case justNow
         case ago
+        case publishedAgo
         case codexInputUnavailable
         case codexInvalidResponseID
         case codexUnknownError
@@ -157,6 +158,7 @@ enum AppLocalization {
         .expiresIn: "expires in %@",
         .justNow: "Just now",
         .ago: "%@ ago",
+        .publishedAgo: "published %@",
         .codexInputUnavailable: "Codex input pipe is unavailable",
         .codexInvalidResponseID: "Codex response has an invalid id",
         .codexUnknownError: "Codex returned an unknown error",
@@ -236,6 +238,7 @@ enum AppLocalization {
         .expiresIn: "%@后到期",
         .justNow: "刚刚",
         .ago: "%@之前",
+        .publishedAgo: "%@发布",
         .codexInputUnavailable: "Codex 输入管道不可用",
         .codexInvalidResponseID: "Codex 响应的 id 无效",
         .codexUnknownError: "Codex 返回了未知错误",
