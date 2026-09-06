@@ -52,6 +52,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var refreshRetryGeneration = 0
     private var updateCheckTimer: Timer?
     private var isRefreshing = false
+    private var isMenuOpen = false
     private var isTerminating = false
     private var quota: CodexQuota?
     private var lastError: Error?
@@ -140,8 +141,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
         refreshNow()
         checkForUpdates(silently: true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
+        guard !isTerminating else { return }
+        renderCurrentState()
     }
 
     @objc private func refreshNow() {
@@ -296,10 +304,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         menu.addItem(actionSeparator)
         menu.addItem(errorItem)
         menu.addItem(openChatGPTItem)
-        menu.addItem(starProjectItem)
         menu.addItem(turnOffDisplayItem)
-        menu.addItem(checkForUpdatesItem)
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(starProjectItem)
+        menu.addItem(checkForUpdatesItem)
         menu.addItem(quitItem)
 
         openChatGPTItem.target = self
@@ -314,10 +322,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
-        creditsItem.isHidden = true
-        quotaSeparator.isHidden = true
+        setMenuItemHidden(creditsItem, true)
+        setMenuItemHidden(quotaSeparator, true)
         clearResetCreditItems()
-        errorItem.isHidden = true
+        setMenuItemHidden(errorItem, true)
         renderUpdateItem()
     }
 
@@ -347,13 +355,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         if let description = QuotaFormatter.creditBalanceDescription(for: quota.credits, language: language) {
             creditsItem.title = description
-            creditsItem.isHidden = false
+            setMenuItemHidden(creditsItem, false)
         } else {
-            creditsItem.isHidden = true
+            setMenuItemHidden(creditsItem, true)
         }
 
         renderResetCredits(quota, now: now)
-        quotaSeparator.isHidden = creditsItem.isHidden && resetCreditItems.isEmpty
+        setMenuItemHidden(
+            quotaSeparator,
+            creditsItem.isHidden && !resetCreditItems.contains { !$0.isHidden }
+        )
         renderUpdateItem()
         renderErrorItem()
     }
@@ -363,8 +374,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
-        creditsItem.isHidden = true
-        quotaSeparator.isHidden = true
+        setMenuItemHidden(creditsItem, true)
+        setMenuItemHidden(quotaSeparator, true)
         clearResetCreditItems()
         renderUpdateItem()
         renderErrorItem()
@@ -387,8 +398,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderWindowItem(_ item: NSMenuItem, window: RateLimitWindow?, now: Date) {
         guard let window else {
-            item.title = ""
-            item.isHidden = true
+            if !isMenuOpen {
+                item.title = ""
+                item.isHidden = true
+            }
             return
         }
         item.title = QuotaFormatter.windowDescription(
@@ -397,44 +410,59 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             now: now,
             language: language
         )
-        item.isHidden = false
+        setMenuItemHidden(item, false)
     }
 
     private func renderResetCredits(
         _ quota: CodexQuota,
         now: Date
     ) {
-        clearResetCreditItems()
         let credits = quota.resetCreditsForDisplay
-        guard !credits.isEmpty else {
-            return
+        synchronizeResetCreditItems(count: credits.count)
+
+        if !isMenuOpen {
+            for item in resetCreditItems {
+                item.isHidden = true
+            }
         }
+
+        for (credit, item) in zip(credits, resetCreditItems) {
+            item.title = AppLocalization.format(
+                .resetCredit,
+                language: language,
+                QuotaFormatter.resetCreditDescription(
+                    at: credit.expiresAt,
+                    now: now,
+                    expirationIsKnown: credit.expirationIsKnown,
+                    language: language
+                )
+            )
+            setMenuItemHidden(item, false)
+        }
+    }
+
+    private func synchronizeResetCreditItems(count: Int) {
+        guard !isMenuOpen else { return }
 
         let insertionIndex = menu.index(of: actionSeparator)
         guard insertionIndex >= 0 else { return }
 
-        for credit in credits {
-            let item = NSMenuItem(
-                title: AppLocalization.format(
-                    .resetCredit,
-                    language: language,
-                    QuotaFormatter.resetCreditDescription(
-                        at: credit.expiresAt,
-                        now: now,
-                        expirationIsKnown: credit.expirationIsKnown,
-                        language: language
-                    )
-                ),
-                action: nil,
-                keyEquivalent: ""
-            )
+        while resetCreditItems.count < count {
+            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.insertItem(item, at: insertionIndex + resetCreditItems.count)
             resetCreditItems.append(item)
         }
+
+        while resetCreditItems.count > count {
+            guard let item = resetCreditItems.popLast() else { break }
+            menu.removeItem(item)
+        }
     }
 
     private func clearResetCreditItems() {
+        guard !isMenuOpen else { return }
+
         for item in resetCreditItems {
             menu.removeItem(item)
         }
@@ -456,6 +484,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         checkForUpdatesItem.isEnabled = !isInstallingUpdate && displayedUpdateStatus.isInteractive
     }
 
+    private func setMenuItemHidden(_ item: NSMenuItem, _ hidden: Bool) {
+        guard !isMenuOpen else { return }
+        item.isHidden = hidden
+    }
+
     private func renderErrorItem() {
         if let lastError {
             errorItem.title = AppLocalization.format(
@@ -463,9 +496,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 language: language,
                 Self.compactErrorMessage(lastError.localizedDescription)
             )
-            errorItem.isHidden = false
+            setMenuItemHidden(errorItem, false)
         } else {
-            errorItem.isHidden = true
+            setMenuItemHidden(errorItem, true)
         }
     }
 
