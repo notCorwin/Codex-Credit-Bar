@@ -20,9 +20,9 @@ enum QuotaFormatter {
         } else if let quota, let window = quota.statusWindow {
             if window.remainingPercent > 0 {
                 value = "\(window.remainingPercent)%"
-            } else if quota.shouldDisplayCredits,
+            } else if statusUsesCredits(for: quota),
                       let balance = creditsBalance(for: quota.credits) {
-                value = "✨\(balance)"
+                value = balance
             } else if let remaining = remainingTime(at: window.resetsAt, now: now, language: language) {
                 value = remaining
             } else {
@@ -32,6 +32,15 @@ enum QuotaFormatter {
             value = "—"
         }
         return includingProductName ? "Codex \(value)" : value
+    }
+
+    static func statusUsesCredits(for quota: CodexQuota?) -> Bool {
+        guard let quota,
+              quota.credits?.unlimited != true,
+              quota.shouldDisplayCredits else {
+            return false
+        }
+        return creditsBalance(for: quota.credits) != nil
     }
 
     static func creditBalanceDescription(

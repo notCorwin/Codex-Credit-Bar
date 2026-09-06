@@ -16,7 +16,7 @@ Codex Credit Bar 是一个原生 macOS 菜单栏应用，用于查看 Codex CLI 
 - 通过 `codex app-server` 读取 Codex CLI 的登录状态；应用不会复制或保存访问令牌。
 - 自动将 macOS 系统代理（包括 PAC）传递给 Codex CLI，支持从 Finder 启动。
 - 从菜单直接启动本机的 ChatGPT App（当前 Bundle ID：`com.openai.codex`，兼容旧版 `com.openai.chat`）。
-- 唤出菜单及每分钟自动检查 GitHub `autobuild` Release，有新版本时在菜单中显示，可手动下载、安装和重启。
+- 启动后每 3 分钟自动检查 GitHub `autobuild` Release；打开菜单只刷新账户，不触发版本检查，有新版本时可从菜单手动下载、安装和重启。
 - 从菜单打开项目 GitHub 页面或执行 `pmset displaysleepnow` 熄屏。
 
 ## 系统要求
@@ -67,7 +67,7 @@ Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex
 应用启动后会显示在 macOS 菜单栏。点击菜单栏中的额度数字即可查看详情：
 
 - **打开 ChatGPT**：启动本机已安装的 ChatGPT App；未安装或启动失败时显示提示，不会打开网页。
-- **更新状态**：唤出菜单时及每分钟自动检查一次，显示“检查更新” “正在检查...” “已是最新版本” “检查更新失败”或“有最新版本可用 · 前七位哈希 · 发布时间”。自动发现更新时不会弹窗；点击可用更新后可确认更新，检查失败时可直接重试。
+- **更新状态**：启动后每 3 分钟自动检查一次，打开菜单不触发版本检查；点击更新项才会立即检查。状态显示“检查更新” “正在检查...” “已是最新版本” “检查更新失败”或“有最新版本可用 · 前七位哈希 · 发布时间”。自动发现更新时不会弹窗；点击可用更新后可确认更新，检查失败时可直接重试。
 - **Star 此项目**：在浏览器打开项目 GitHub 页面。
 - **熄屏**：执行 macOS 的 `pmset displaysleepnow`。
 - **退出 Codex Credit Bar**：退出应用。

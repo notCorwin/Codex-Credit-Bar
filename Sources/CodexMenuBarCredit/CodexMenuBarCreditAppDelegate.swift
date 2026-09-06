@@ -119,7 +119,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         RunLoop.main.add(menuRefreshTimer, forMode: .common)
         self.menuRefreshTimer = menuRefreshTimer
         let updateCheckTimer = Timer(
-            timeInterval: 60,
+            timeInterval: 3 * 60,
             target: self,
             selector: #selector(checkForUpdatesAutomatically),
             userInfo: nil,
@@ -127,7 +127,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         )
         RunLoop.main.add(updateCheckTimer, forMode: .common)
         self.updateCheckTimer = updateCheckTimer
-        checkForUpdates(silently: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -143,7 +142,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     func menuWillOpen(_ menu: NSMenu) {
         isMenuOpen = true
         refreshNow()
-        checkForUpdates(silently: true)
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -293,6 +291,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         creditsItem.isEnabled = false
         errorItem.isEnabled = false
         quotaSeparator.isHidden = true
+        actionSeparator.isHidden = true
         creditsItem.isHidden = true
         errorItem.isHidden = true
 
@@ -324,6 +323,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         renderWindowItem(secondaryItem, window: nil, now: Date())
         setMenuItemHidden(creditsItem, true)
         setMenuItemHidden(quotaSeparator, true)
+        setMenuItemHidden(actionSeparator, true)
         clearResetCreditItems()
         setMenuItemHidden(errorItem, true)
         renderUpdateItem()
@@ -347,7 +347,10 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     private func renderQuota(_ quota: CodexQuota) {
         let now = Date()
-        setStatusButtonTitle(statusTitle(for: quota, now: now))
+        setStatusButtonTitle(
+            statusTitle(for: quota, now: now),
+            showsCreditSymbol: QuotaFormatter.statusUsesCredits(for: quota)
+        )
         headerItem.title = "ChatGPT \(quota.planName)"
         let windows = quota.windowsForDisplay
         renderWindowItem(primaryItem, window: windows.indices.contains(0) ? windows[0] : nil, now: now)
@@ -361,10 +364,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
 
         renderResetCredits(quota, now: now)
-        setMenuItemHidden(
-            quotaSeparator,
-            creditsItem.isHidden && !resetCreditItems.contains { !$0.isHidden }
-        )
+        let hasQuotaDetails = !creditsItem.isHidden || resetCreditItems.contains { !$0.isHidden }
+        setMenuItemHidden(quotaSeparator, !hasQuotaDetails)
+        setMenuItemHidden(actionSeparator, !hasQuotaDetails)
         renderUpdateItem()
         renderErrorItem()
     }
@@ -376,6 +378,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         renderWindowItem(secondaryItem, window: nil, now: Date())
         setMenuItemHidden(creditsItem, true)
         setMenuItemHidden(quotaSeparator, true)
+        setMenuItemHidden(actionSeparator, true)
         clearResetCreditItems()
         renderUpdateItem()
         renderErrorItem()
@@ -390,10 +393,25 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         )
     }
 
-    private func setStatusButtonTitle(_ title: String) {
+    private func setStatusButtonTitle(_ title: String, showsCreditSymbol: Bool = false) {
         guard let button = statusItem.button else { return }
         button.title = title
-        button.setAccessibilityValue(title)
+        if showsCreditSymbol {
+            button.image = NSImage(
+                systemSymbolName: "sparkles",
+                accessibilityDescription: AppLocalization.text(
+                    .creditBalanceSymbolDescription,
+                    language: language
+                )
+            )
+            button.imagePosition = .imageLeft
+            button.setAccessibilityValue(
+                AppLocalization.format(.creditBalance, language: language, title)
+            )
+        } else {
+            button.image = nil
+            button.setAccessibilityValue(title)
+        }
     }
 
     private func renderWindowItem(_ item: NSMenuItem, window: RateLimitWindow?, now: Date) {

@@ -52,6 +52,7 @@ enum AppLocalization {
         case okay
         case creditUnlimited
         case creditBalance
+        case creditBalanceSymbolDescription
         case waitingForSync
         case unknownReset
         case resetSuffix
@@ -140,17 +141,18 @@ enum AppLocalization {
         .okay: "OK",
         .creditUnlimited: "Credits remaining: Unlimited",
         .creditBalance: "Credits remaining: %@",
+        .creditBalanceSymbolDescription: "Credits remaining",
         .waitingForSync: "Waiting for sync",
         .unknownReset: "Reset time unknown",
         .resetSuffix: "resets %@",
         .windowDescription: "%@: %@, %@",
-        .fiveHourLimit: "5-hour usage limit",
+        .fiveHourLimit: "5 hour usage limit",
         .weeklyLimit: "Weekly usage limit",
         .quota: "Quota",
         .weeklyQuota: "Weekly quota",
-        .dayQuota: "%@-day quota",
-        .hourQuota: "%@-hour quota",
-        .minuteQuota: "%@-minute quota",
+        .dayQuota: "%@ day quota",
+        .hourQuota: "%@ hour quota",
+        .minuteQuota: "%@ minute quota",
         .resetIn: "in %@",
         .unknownExpiration: "Expiration time unknown",
         .neverExpires: "Never expires",
@@ -220,6 +222,7 @@ enum AppLocalization {
         .okay: "好",
         .creditUnlimited: "积分剩余：无限积分",
         .creditBalance: "积分剩余：%@",
+        .creditBalanceSymbolDescription: "积分剩余",
         .waitingForSync: "等待同步",
         .unknownReset: "重置时间未知",
         .resetSuffix: "%@重置",

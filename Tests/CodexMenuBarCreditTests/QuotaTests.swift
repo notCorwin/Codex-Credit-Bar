@@ -197,7 +197,7 @@ final class QuotaTests: XCTestCase {
                 now: now,
                 language: .english
             ),
-            "5-hour usage limit: 88%, resets in 1 hour 58 minutes"
+            "5 hour usage limit: 88%, resets in 1 hour 58 minutes"
         )
         XCTAssertEqual(
             QuotaFormatter.resetCreditDescription(
@@ -576,9 +576,10 @@ final class QuotaTests: XCTestCase {
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
 
         XCTAssertTrue(quota.shouldDisplayCredits)
+        XCTAssertTrue(QuotaFormatter.statusUsesCredits(for: quota))
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "✨12.50"
+            "12.50"
         )
         XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "积分剩余：12.50")
     }
@@ -647,7 +648,31 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "✨12.50"
+            "12.50"
+        )
+    }
+
+    func testWeeklyExhaustionUsesWeeklyResetWhenFiveHourWindowHasRemaining() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 20, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 319600 },
+            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(
+                for: quota,
+                includingProductName: false,
+                now: Date(timeIntervalSince1970: 1_000)
+            ),
+            "3 天 16 小时"
         )
     }
 
@@ -667,7 +692,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: quota, includingProductName: false),
-            "✨12.50"
+            "12.50"
         )
     }
 
@@ -702,7 +727,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertEqual(
             QuotaFormatter.statusTitle(for: creditQuota, includingProductName: false),
-            "✨90.32"
+            "90.32"
         )
 
         let noCreditJSON = """
@@ -723,6 +748,25 @@ final class QuotaTests: XCTestCase {
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "3 小时 32 分钟"
+        )
+    }
+
+    func testUnlimitedCreditsDoNotUseCreditStatusSymbol() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 2000 },
+            "credits": { "hasCredits": true, "unlimited": true, "balance": "0" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertFalse(QuotaFormatter.statusUsesCredits(for: quota))
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "∞"
         )
     }
 
