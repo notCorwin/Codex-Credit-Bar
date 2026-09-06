@@ -149,15 +149,10 @@ struct CodexQuota: Equatable, Sendable {
     }
 
     var statusWindow: RateLimitWindow? {
-        if let fiveHourWindow {
-            if fiveHourWindow.remainingPercent == 0,
-               let weeklyWindow,
-               weeklyWindow.remainingPercent == 0 {
-                return weeklyWindow
-            }
-            return fiveHourWindow
+        if let weeklyWindow, weeklyWindow.remainingPercent == 0 {
+            return weeklyWindow
         }
-        return weeklyWindow ?? primary ?? secondary
+        return fiveHourWindow ?? weeklyWindow ?? primary ?? secondary
     }
 
     var windowsForDisplay: [RateLimitWindow] {

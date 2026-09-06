@@ -631,6 +631,26 @@ final class QuotaTests: XCTestCase {
         )
     }
 
+    func testWeeklyExhaustionUsesCreditsEvenWhenFiveHourWindowHasRemaining() throws {
+        let json = """
+        {
+          "rateLimits": {
+            "primary": { "usedPercent": 20, "windowDurationMins": 300, "resetsAt": 2000 },
+            "secondary": { "usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 319600 },
+            "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
+
+        XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
+        XCTAssertEqual(
+            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            "✨12.50"
+        )
+    }
+
     func testFiveHourExhaustionUsesCreditsBeforeWeeklyPercentage() throws {
         let json = """
         {
