@@ -462,13 +462,12 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private func synchronizeResetCreditItems(count: Int) {
         guard !isMenuOpen else { return }
 
-        let insertionIndex = menu.index(of: actionSeparator)
-        guard insertionIndex >= 0 else { return }
+        guard menu.index(of: actionSeparator) >= 0 else { return }
 
         while resetCreditItems.count < count {
             let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             item.isEnabled = false
-            menu.insertItem(item, at: insertionIndex + resetCreditItems.count)
+            menu.insertItem(item, at: menu.index(of: actionSeparator))
             resetCreditItems.append(item)
         }
 
