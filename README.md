@@ -1,126 +1,77 @@
 # Codex Credit Bar
 
-Codex Credit Bar 是一个原生 macOS 菜单栏应用，用于查看 Codex CLI 账户的实时额度，并在需要时打开本机已安装的 ChatGPT App。
+Codex Credit Bar 是一个原生 macOS 菜单栏 App，用于查看本机 Codex CLI 账户额度，并提供打开 ChatGPT、熄屏和更新 App 等快捷操作。
 
-## 应用效果
-
-![Codex Credit Bar 菜单栏效果](Assets/CodexMenuBarCreditPreview.jpeg)
+![Codex Credit Bar 菜单栏预览](Assets/CodexMenuBarCreditPreview.jpeg)
 
 ## 功能
 
-- 在菜单栏优先显示 5 小时额度；账号没有此限制时显示周额度。
-- 查看主额度、次级额度、重置时间、套餐、Credits 和重置权益信息。
-- 界面支持简体中文和 English，跟随 macOS 首选语言；其他语言回退为 English。
-- 启动时、每 15 秒以及打开菜单时自动刷新；下拉菜单中的倒计时每秒更新。
+- 优先显示 5 小时额度；账号没有该窗口时显示周额度。
+- 显示套餐、主/次级限额、重置时间、Credits 和限额重置权益。
+- 支持简体中文和 English，跟随 macOS 首选语言。
+- 启动时、每 15 秒和打开菜单时刷新账户；菜单内倒计时每秒更新。
 - 刷新失败时保留最近一次成功数据，并显示错误提示。
-- 通过 `codex app-server` 读取 Codex CLI 的登录状态；应用不会复制或保存访问令牌。
-- 自动将 macOS 系统代理（包括 PAC）传递给 Codex CLI，支持从 Finder 启动。
-- 从菜单直接启动本机的 ChatGPT App（当前 Bundle ID：`com.openai.codex`，兼容旧版 `com.openai.chat`）。
-- 启动后每 3 分钟自动检查 GitHub `autobuild` Release；打开菜单只刷新账户，不触发版本检查，有新版本时可从菜单手动下载、安装和重启。
-- 从菜单打开项目 GitHub 页面或执行 `pmset displaysleepnow` 熄屏。
+- 通过本机 codex app-server 读取状态，不复制或保存 Codex 访问令牌。
+- 自动向 Codex CLI 传递 macOS 系统代理和 PAC 设置，支持 Finder 启动。
+- 从菜单打开本机 ChatGPT App、打开项目 GitHub 页面或执行 pmset displaysleepnow。
+- 每 3 分钟检查 GitHub autobuild Release；可用更新会显示最新提交的前 7 位哈希，并可从菜单下载、校验、安装和重启。
 
 ## 系统要求
 
-- macOS 13 或更高版本
-- 已安装并完成登录的 [Codex CLI](https://github.com/openai/codex)
-- 可选：已安装 ChatGPT macOS App，以使用“打开 ChatGPT”菜单项
+- macOS 13+；
+- 已安装并完成登录的 [Codex CLI](https://github.com/openai/codex)；
+- 可选：已安装 ChatGPT macOS App，以使用“打开 ChatGPT”。
 
-首次使用前，请在终端完成登录：
+首次使用前：
 
-```sh
+~~~sh
 codex login
-```
+~~~
 
 ## 安装与运行
 
-### 从源码运行
+直接运行 Swift Package：
 
-```sh
+~~~sh
 swift run
-```
+~~~
 
-如果 Codex CLI 不在常见安装路径中，可以通过环境变量指定路径：
+如果 codex 不在常见路径中：
 
-```sh
+~~~sh
 CODEX_BIN=/path/to/codex swift run
-```
+~~~
 
-### 构建 macOS App
+构建可双击启动的 App：
 
-```sh
+~~~sh
 ./scripts/build-app.sh
 open "dist/Codex Credit Bar.app"
-```
+~~~
 
-构建脚本会生成经过 ad-hoc 签名的 `dist/Codex Credit Bar.app`。`dist/` 是构建产物，不应提交到仓库。
-
-## 自动构建发布
-
-每次向 GitHub 推送提交后，GitHub Actions 会在 macOS runner 上自动执行构建和测试，生成 `Codex Credit Bar.app`，并更新一个名为 **autobuild** 的正式 Release。
-
-Release 使用固定的 `autobuild` 标签和标题，Assets 中显示为 `Codex Credit Bar.app`。每次提交都会删除并重新创建该 Release，将标签指向最新提交并刷新发布时间，不会保留旧 Release 或附件，不需要手动创建 Release 或上传文件。GitHub 禁止 Release 附件使用 `.app` 目录扩展名，因此底层文件名为 `Codex.Credit.Bar.app.tar`，但显示标签仍为 `Codex Credit Bar.app`；这是未压缩的 tar 数据，下载后的更新流程会自动处理。
-
-工作流定义位于 `.github/workflows/release.yml`。
-
-## 使用说明
-
-应用启动后会显示在 macOS 菜单栏。点击菜单栏中的额度数字即可查看详情：
-
-- **打开 ChatGPT**：启动本机已安装的 ChatGPT App；未安装或启动失败时显示提示，不会打开网页。
-- **更新状态**：启动后每 3 分钟自动检查一次，打开菜单不触发版本检查；点击更新项才会立即检查。状态显示“检查更新” “正在检查...” “已是最新版本” “检查更新失败”或“有最新版本可用 · 前七位哈希 · 发布时间”。自动发现更新时不会弹窗；点击可用更新后可确认更新，检查失败时可直接重试。
-- **Star 此项目**：在浏览器打开项目 GitHub 页面。
-- **熄屏**：执行 macOS 的 `pmset displaysleepnow`。
-- **退出 Codex Credit Bar**：退出应用。
-
-应用通过 Codex CLI 的本地 `app-server` 获取数据。若额度读取失败，请确认：
-
-1. 已成功执行 `codex login`，且当前用户与运行 App 的用户一致。
-2. Codex CLI 可执行文件位于 `PATH`、`CODEX_BIN` 或常见安装路径（包括 Homebrew、npm、Volta 和 asdf 路径）。
-3. `codex app-server` 可以正常启动；终端中可用该命令进行诊断。
-4. 若 macOS 使用系统代理或 PAC，确保代理程序正在运行；App 会解析系统设置并传递给 Codex CLI。
-
-更新功能需要联网访问 GitHub；网络失败、没有可用附件或没有权限替换安装目录时，应用会显示具体错误。更新只接受仓库发布的 `Codex Credit Bar.app`（底层为 `.tar`）附件，不会打开网页安装。
+构建脚本会生成经过 ad-hoc 签名的 dist/Codex Credit Bar.app。dist/、.build/ 和 .swiftpm/ 都是本地构建产物。
 
 ## 开发与验证
 
-项目使用 Swift Package Manager，不依赖第三方库：
-
-```sh
+~~~sh
 swift build
 swift test
-```
+~~~
 
-也可以使用 Make：
+也可以使用：
 
-```sh
+~~~sh
 make build
 make test
 make app
-make clean
-```
+~~~
 
-源码位于 `Sources/`，测试位于 `Tests/`。
+实现位于 [Sources/CodexMenuBarCredit](Sources/CodexMenuBarCredit)，测试位于 [Tests/CodexMenuBarCreditTests](Tests/CodexMenuBarCreditTests)。GitHub Actions 使用 [release.yml](.github/workflows/release.yml) 在 macOS runner 上构建测试并发布 Autobuild。
 
-## 贡献
+## 获取帮助与贡献
 
-欢迎提交修复和改进。提交 Pull Request 前请：
+额度读取失败时，请确认 codex login 已成功、App 与 CLI 使用同一 macOS 用户、codex app-server 可启动，并检查 CODEX_BIN、PATH 或系统代理配置。
 
-1. 保持改动聚焦，并说明变更原因。
-2. 为非平凡逻辑补充或更新测试。
-3. 运行 `swift build` 和 `swift test`。
-4. 不要提交 `.build/`、`dist/`、`.swiftpm/` 或 `.DS_Store`。
+提交 Issue 请附上 macOS 版本、芯片架构、Codex CLI 版本、安装方式、复现步骤和错误信息；请移除 token、账号和日志中的敏感内容。欢迎提交聚焦的 Pull Request，非平凡逻辑应同步测试。
 
-详细说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 问题反馈
-
-提交 Issue 时请包含：
-
-- macOS 版本和 Mac 芯片架构。
-- Codex CLI 版本及安装方式。
-- 复现步骤、实际结果和预期结果。
-- 相关终端输出或应用错误提示；请移除令牌、账号信息等敏感内容。
-
-## 许可证
-
-本项目基于 [MIT License](LICENSE) 发布。
+维护者：[notCorwin](https://github.com/notCorwin)。贡献细则见 [CONTRIBUTING.md](CONTRIBUTING.md)，许可证见 [LICENSE](LICENSE)。
