@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+      - "!main"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Build and test
+        run: |
+          swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+          swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors

@@ -5,14 +5,14 @@ struct AppUpdate: Sendable {
     let name: String
     let revision: String
     let assetURL: URL
-    let expectedSHA256: String?
+    let expectedSHA256: String
     let publishedAt: Date?
 
     init(
         name: String,
         revision: String,
         assetURL: URL,
-        expectedSHA256: String? = nil,
+        expectedSHA256: String,
         publishedAt: Date? = nil
     ) {
         self.name = name
@@ -475,6 +475,9 @@ final class AppUpdater: @unchecked Sendable {
             if releaseRevision != "unknown", releaseRevision == revision(in: currentRevision) {
                 return .success(nil)
             }
+            guard let expectedSHA256 else {
+                return .failure(AppUpdateError.invalidResponse)
+            }
             return .success(AppUpdate(
                 name: release.name ?? "autobuild",
                 revision: releaseRevision,
@@ -863,8 +866,7 @@ final class AppUpdater: @unchecked Sendable {
         }
     }
 
-    private func verifySHA256(of file: URL, expected: String?) throws {
-        guard let expected else { return }
+    private func verifySHA256(of file: URL, expected: String) throws {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         var hasher = SHA256()

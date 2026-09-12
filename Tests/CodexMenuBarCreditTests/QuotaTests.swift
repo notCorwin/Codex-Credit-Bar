@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import CryptoKit
 import Darwin
 @testable import CodexMenuBarCredit
 
@@ -172,6 +174,41 @@ final class QuotaTests: XCTestCase {
         let status = CodexMenuBarCreditAppDelegate.UpdateStatus.failed
         XCTAssertEqual(status.title, "检查更新失败")
         XCTAssertTrue(status.isInteractive)
+    }
+
+    func testResetCreditSeparatorRequiresBothMenuSections() {
+        XCTAssertTrue(
+            CodexMenuBarCreditAppDelegate.shouldShowResetCreditSeparator(
+                hasCredits: true,
+                hasResetCredits: true
+            )
+        )
+        XCTAssertFalse(
+            CodexMenuBarCreditAppDelegate.shouldShowResetCreditSeparator(
+                hasCredits: true,
+                hasResetCredits: false
+            )
+        )
+        XCTAssertFalse(
+            CodexMenuBarCreditAppDelegate.shouldShowResetCreditSeparator(
+                hasCredits: false,
+                hasResetCredits: true
+            )
+        )
+    }
+
+    @MainActor
+    func testMenuSeparatesCreditsFromResetCreditRows() {
+        let delegate = CodexMenuBarCreditAppDelegate()
+        delegate.configureMenu()
+        let resetItem = NSMenuItem(title: "Usage limit reset", action: nil, keyEquivalent: "")
+        delegate.menu.insertItem(resetItem, at: 6)
+
+        let items = delegate.menu.items
+        XCTAssertFalse(items[4].isSeparatorItem)
+        XCTAssertTrue(items[5].isSeparatorItem)
+        XCTAssertTrue(items[6] === resetItem)
+        XCTAssertTrue(items[7].isSeparatorItem)
     }
 
     func testEnglishLocalizationUsesSystemLanguageSelectionAndReadableUnits() {
@@ -1562,7 +1599,8 @@ final class QuotaTests: XCTestCase {
             AppUpdate(
                 name: "autobuild",
                 revision: "unknown",
-                assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!
+                assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!,
+                expectedSHA256: String(repeating: "0", count: 64)
             )
         ) { result in
             guard case .failure(AppUpdateError.invalidPackage) = result else {
@@ -1633,6 +1671,9 @@ final class QuotaTests: XCTestCase {
         try makeTestApp(at: updateApp, marker: "new")
         try runTar(arguments: ["-cf", archive.path, "-C", updateRoot.path, "Codex Credit Bar.app"])
         let archiveData = try Data(contentsOf: archive)
+        let archiveDigest = SHA256.hash(data: archiveData)
+            .map { String(format: "%02x", $0) }
+            .joined()
         TestURLProtocol.configure { _ in
             TestURLProtocolResponse(statusCode: 200, data: archiveData)
         }
@@ -1658,7 +1699,8 @@ final class QuotaTests: XCTestCase {
             AppUpdate(
                 name: "autobuild",
                 revision: "unknown",
-                assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!
+                assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!,
+                expectedSHA256: archiveDigest
             )
         ) { result in
             guard case .success = result else {
@@ -1734,6 +1776,29 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(update?.revision, releaseRevision)
         XCTAssertEqual(update?.expectedSHA256, digest.lowercased())
         XCTAssertEqual(update?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
+    }
+
+    func testReleaseWithoutDigestIsRejectedWhenAnUpdateIsAvailable() throws {
+        let currentRevision = "0123456789abcdef0123456789abcdef01234567"
+        let releaseRevision = "fedcba9876543210fedcba9876543210fedcba98"
+        let json = """
+        {
+          "target_commitish": "\(releaseRevision)",
+          "assets": [
+            {
+              "name": "Codex.Credit.Bar.app.tar",
+              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let result = AppUpdater.parse(data: json, currentRevision: currentRevision)
+
+        guard case .failure(AppUpdateError.invalidResponse) = result else {
+            XCTFail("Expected a release without a digest to be rejected")
+            return
+        }
     }
 
     func testReleaseRejectsUntrustedAssetURL() throws {
@@ -2008,14 +2073,16 @@ final class QuotaTests: XCTestCase {
     }
 
     private func updateReleaseData() -> Data {
-        """
+        let digest = String(repeating: "a", count: 64)
+        return """
         {
           "name": "autobuild",
           "target_commitish": "fedcba9876543210fedcba9876543210fedcba98",
           "assets": [
             {
               "name": "Codex.Credit.Bar.app.tar",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
+              "digest": "sha256:\(digest)"
             }
           ]
         }

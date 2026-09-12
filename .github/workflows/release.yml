@@ -3,7 +3,7 @@ name: Autobuild macOS Release
 on:
   push:
     branches:
-      - "**"
+      - main
 
 permissions:
   contents: write
@@ -95,3 +95,7 @@ jobs:
           asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
             --jq '[.[] | select(.name == "Codex.Credit.Bar.app.tar" and .label == "Codex Credit Bar.app")] | length')"
           [[ "$asset_count" == "1" ]]
+
+          asset_digest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
+            --jq '[.[] | select(.name == "Codex.Credit.Bar.app.tar" and .label == "Codex Credit Bar.app")] | .[0].digest')"
+          [[ "$asset_digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]
