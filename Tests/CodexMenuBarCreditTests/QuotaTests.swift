@@ -176,6 +176,13 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(status.isInteractive)
     }
 
+    @MainActor
+    func testLatestUpdateStatusShowsCheckActionAndIsRetryable() {
+        let status = CodexMenuBarCreditAppDelegate.UpdateStatus.latest
+        XCTAssertEqual(status.title, "检查更新")
+        XCTAssertTrue(status.isInteractive)
+    }
+
     func testResetCreditSeparatorRequiresBothMenuSections() {
         XCTAssertTrue(
             CodexMenuBarCreditAppDelegate.shouldShowResetCreditSeparator(

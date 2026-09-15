@@ -23,7 +23,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .checking:
                 return AppLocalization.text(.updateChecking, language: language)
             case .latest:
-                return AppLocalization.text(.updateLatest, language: language)
+                return AppLocalization.text(.updateCheck, language: language)
             case .failed:
                 return AppLocalization.text(.updateFailed, language: language)
             case .available(let revision):
@@ -33,9 +33,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         var isInteractive: Bool {
             switch self {
-            case .idle, .failed, .available:
+            case .idle, .latest, .failed, .available:
                 return true
-            case .checking, .latest:
+            case .checking:
                 return false
             }
         }

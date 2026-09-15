@@ -25,7 +25,6 @@ enum AppLocalization {
     enum Key: Hashable {
         case updateCheck
         case updateChecking
-        case updateLatest
         case updateFailed
         case updateAvailable
         case openChatGPT
@@ -114,7 +113,6 @@ enum AppLocalization {
     private static let english: [Key: String] = [
         .updateCheck: "Check for Updates",
         .updateChecking: "Checking...",
-        .updateLatest: "Up to Date",
         .updateFailed: "Update Check Failed",
         .updateAvailable: "Latest version available · %@",
         .openChatGPT: "Open ChatGPT",
@@ -195,7 +193,6 @@ enum AppLocalization {
     private static let simplifiedChinese: [Key: String] = [
         .updateCheck: "检查更新",
         .updateChecking: "正在检查...",
-        .updateLatest: "已是最新版本",
         .updateFailed: "检查更新失败",
         .updateAvailable: "有最新版本可用 · %@",
         .openChatGPT: "打开 ChatGPT",

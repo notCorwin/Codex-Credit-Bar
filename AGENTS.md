@@ -40,7 +40,7 @@ ChatGPT Plus/Pro 5x/20x
 
 Star 此项目
 
-已是最新版本 / 有可用更新 · 7qduhq8 · 7 分钟 18 秒之前发布
+检查更新 / 有可用更新 · 7qduhq8 · 7 分钟 18 秒之前发布
 
 退出 Codex Credit Bar
 
