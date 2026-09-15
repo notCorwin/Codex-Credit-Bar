@@ -58,6 +58,7 @@ Star 此项目
 
 ## 备注
 
-1. 熄屏使用`pmset displaysleepnow。`
+1. 熄屏使用`pmset displaysleepnow`。
 2. Star 此项目， 即 在浏览器打开此项目的 GitHub 页面。
 3. 打开 ChatGPT 指打开电脑上安装的 ChatGPT App。
+4. 刷新时不重建/隐藏下拉菜单行，仅在行数变化时增减行。

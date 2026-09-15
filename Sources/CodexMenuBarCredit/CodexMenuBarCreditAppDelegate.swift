@@ -447,10 +447,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         let credits = quota.resetCreditsForDisplay
         synchronizeResetCreditItems(count: credits.count)
 
-        for item in resetCreditItems {
-            item.isHidden = true
-        }
-
         for (credit, item) in zip(credits, resetCreditItems) {
             item.title = AppLocalization.format(
                 .resetCredit,
