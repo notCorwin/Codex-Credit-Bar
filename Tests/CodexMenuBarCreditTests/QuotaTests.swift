@@ -172,8 +172,9 @@ final class QuotaTests: XCTestCase {
     @MainActor
     func testUpdateFailureStatusIsVisibleAndRetryable() {
         let status = CodexMenuBarCreditAppDelegate.UpdateStatus.failed
-        XCTAssertEqual(status.title, "检查更新失败")
+        XCTAssertEqual(status.title, "检查更新")
         XCTAssertTrue(status.isInteractive)
+        XCTAssertEqual(CodexMenuBarCreditAppDelegate.UpdateStatus.checking.title, "检查更新")
     }
 
     @MainActor

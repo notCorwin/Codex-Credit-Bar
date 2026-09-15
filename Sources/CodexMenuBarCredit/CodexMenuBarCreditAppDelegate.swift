@@ -18,14 +18,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         func title(language: AppLanguage) -> String {
             switch self {
-            case .idle:
+            case .idle, .checking, .latest, .failed:
                 return AppLocalization.text(.updateCheck, language: language)
-            case .checking:
-                return AppLocalization.text(.updateChecking, language: language)
-            case .latest:
-                return AppLocalization.text(.updateCheck, language: language)
-            case .failed:
-                return AppLocalization.text(.updateFailed, language: language)
             case .available(let revision):
                 return AppLocalization.format(.updateAvailable, language: language, revision)
             }
