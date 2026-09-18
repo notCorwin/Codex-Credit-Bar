@@ -824,7 +824,9 @@ final class QuotaTests: XCTestCase {
 
     func testKnownPlanTypesUseReadableNames() throws {
         let expectedNames = [
-            "self_serve_business_prolite": "Business Pro Lite",
+            "prolite": "Pro 5x",
+            "pro": "Pro 20x",
+            "self_serve_business_prolite": "Business Pro 5x",
             "enterprise_cbp_automation": "Enterprise",
             "edu_plus": "Edu Plus",
             "edu_pro": "Edu Pro",
