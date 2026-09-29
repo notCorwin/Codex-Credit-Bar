@@ -185,23 +185,25 @@ struct CodexQuota: Equatable, Sendable {
         statusWindow?.remainingPercent == 0 && credits?.hasCredits == true
     }
 
-    var planName: String {
-        switch snapshot.planType?.lowercased() {
+    var planName: String? {
+        guard let planType = snapshot.planType?.lowercased() else { return nil }
+        // Keep these labels aligned with Codex CLI's SubscriptionDisplay::Status.
+        switch planType {
         case "free": return "Free"
         case "go": return "Go"
         case "plus": return "Plus"
-        case "pro": return "Pro 20x"
-        case "prolite": return "Pro 5x"
-        case "team": return "Team"
-        case "business", "self_serve_business_usage_based": return "Business"
-        case "self_serve_business_prolite": return "Business Pro 5x"
-        case "ent26", "enterprise_cbp_automation", "enterprise_cbp_usage_based", "enterprise":
+        case "prolite": return "Pro 100"
+        case "pro": return "Pro 200"
+        case "promax": return "Pro 500"
+        case "team", "self_serve_business_usage_based": return "Business"
+        case "self_serve_business_prolite": return "Business Premium"
+        case "business", "ent26", "enterprise_cbp_usage_based", "enterprise", "hc":
             return "Enterprise"
-        case "edu": return "Edu"
+        case "enterprise_cbp_automation": return "Enterprise (Automation)"
+        case "edu", "education": return "Edu"
         case "edu_plus": return "Edu Plus"
         case "edu_pro": return "Edu Pro"
-        case "unknown": return "Codex"
-        default: return snapshot.planType?.capitalized ?? "Codex"
+        default: return "Unknown"
         }
     }
 }

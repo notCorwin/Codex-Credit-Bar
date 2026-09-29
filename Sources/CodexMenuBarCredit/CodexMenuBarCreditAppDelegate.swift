@@ -346,7 +346,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             statusTitle(for: quota, now: now),
             showsCreditSymbol: QuotaFormatter.statusUsesCredits(for: quota)
         )
-        headerItem.title = "ChatGPT \(quota.planName)"
+        headerItem.title = quota.planName.map { "ChatGPT \($0)" } ?? "ChatGPT"
         let windows = quota.windowsForDisplay
         renderWindowItem(primaryItem, window: windows.indices.contains(0) ? windows[0] : nil, now: now)
         renderWindowItem(secondaryItem, window: windows.indices.contains(1) ? windows[1] : nil, now: now)

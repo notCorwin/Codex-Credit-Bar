@@ -824,13 +824,28 @@ final class QuotaTests: XCTestCase {
 
     func testKnownPlanTypesUseReadableNames() throws {
         let expectedNames = [
-            "prolite": "Pro 5x",
-            "pro": "Pro 20x",
-            "self_serve_business_prolite": "Business Pro 5x",
-            "enterprise_cbp_automation": "Enterprise",
+            "free": "Free",
+            "go": "Go",
+            "plus": "Plus",
+            "prolite": "Pro 100",
+            "pro": "Pro 200",
+            "promax": "Pro 500",
+            "team": "Business",
+            "self_serve_business_usage_based": "Business",
+            "self_serve_business_prolite": "Business Premium",
+            "business": "Enterprise",
+            "ent26": "Enterprise",
+            "enterprise_cbp_usage_based": "Enterprise",
+            "enterprise": "Enterprise",
+            "hc": "Enterprise",
+            "enterprise_cbp_automation": "Enterprise (Automation)",
+            "edu": "Edu",
+            "education": "Edu",
             "edu_plus": "Edu Plus",
             "edu_pro": "Edu Pro",
-            "unknown": "Codex"
+            "unknown": "Unknown",
+            "future_plan": "Unknown",
+            "": "Unknown"
         ]
 
         for (planType, expectedName) in expectedNames {
@@ -841,6 +856,12 @@ final class QuotaTests: XCTestCase {
 
             XCTAssertEqual(CodexQuota(response: response).planName, expectedName)
         }
+
+        let responseWithoutPlan = try JSONDecoder().decode(
+            RateLimitsResponse.self,
+            from: Data(#"{"rateLimits":{}}"#.utf8)
+        )
+        XCTAssertNil(CodexQuota(response: responseWithoutPlan).planName)
     }
 
     func testConfiguredCodexPathTakesPriority() throws {

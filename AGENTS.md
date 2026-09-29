@@ -12,7 +12,7 @@
 
 ## 下拉菜单布局
 
-ChatGPT Plus/Pro 5x/20x
+ChatGPT Plus / ChatGPT Pro 100 / ChatGPT Pro 200 / ChatGPT Pro 500
 
 5小时使用限额：80%，3 小时 20 分钟后重置
 
