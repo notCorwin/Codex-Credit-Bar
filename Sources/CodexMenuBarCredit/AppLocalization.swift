@@ -25,8 +25,10 @@ enum AppLocalization {
     enum Key: Hashable {
         case updateCheck
         case updateChecking
+        case updateInstalling
         case updateFailed
         case updateAvailable
+        case automaticallyInstallUpdates
         case openChatGPT
         case starProject
         case turnOffDisplay
@@ -89,8 +91,8 @@ enum AppLocalization {
         case noRelease
         case checkUpdateFailed
         case githubInvalidResponse
-        case assetMissing
         case downloadFailed
+        case updateRateLimited
         case invalidPackage
         case installFailed
         case updateBusy
@@ -99,7 +101,6 @@ enum AppLocalization {
         case replaceFailedAndRestore
         case launchUpdatedAndRestoreFailed
         case launchUpdatedFailed
-        case handoffFailed
     }
 
     enum DurationUnit {
@@ -113,8 +114,10 @@ enum AppLocalization {
     private static let english: [Key: String] = [
         .updateCheck: "Check for Updates",
         .updateChecking: "Checking...",
+        .updateInstalling: "Installing Update…",
         .updateFailed: "Update Check Failed",
         .updateAvailable: "Latest version available · %@",
+        .automaticallyInstallUpdates: "Automatically Install Updates",
         .openChatGPT: "Open ChatGPT",
         .starProject: "Star This Project",
         .turnOffDisplay: "Turn Off Display",
@@ -174,11 +177,11 @@ enum AppLocalization {
         .codexOutputClosed: "Codex output pipe closed.",
         .codexStopped: "Codex connection stopped.",
         .updateNotPackaged: "Updates can only run from a packaged Codex Credit Bar app.",
-        .noRelease: "No autobuild release is currently available on GitHub.",
+        .noRelease: "No autobuild update manifest is currently available on GitHub.",
         .checkUpdateFailed: "Unable to check for updates: %@",
         .githubInvalidResponse: "GitHub returned an invalid response.",
-        .assetMissing: "The latest release has no Codex Credit Bar.app attachment.",
         .downloadFailed: "Update download failed: %@",
+        .updateRateLimited: "GitHub temporarily rejected update requests. Try again after %@.",
         .invalidPackage: "The downloaded package is not a valid Codex Credit Bar app.",
         .installFailed: "Update installation failed: %@",
         .updateBusy: "An update is already in progress.",
@@ -187,14 +190,15 @@ enum AppLocalization {
         .replaceFailedAndRestore: "Update replacement failed, and restoring the old version also failed: %@",
         .launchUpdatedAndRestoreFailed: "Unable to launch the updated app, and restoring the old version also failed: %@",
         .launchUpdatedFailed: "Unable to launch the updated app: %@",
-        .handoffFailed: "The updated app did not complete the launch handoff."
     ]
 
     private static let simplifiedChinese: [Key: String] = [
         .updateCheck: "检查更新",
         .updateChecking: "正在检查...",
+        .updateInstalling: "正在安装更新…",
         .updateFailed: "检查更新失败",
         .updateAvailable: "有最新版本可用 · %@",
+        .automaticallyInstallUpdates: "自动安装更新",
         .openChatGPT: "打开 ChatGPT",
         .starProject: "Star 此项目",
         .turnOffDisplay: "熄屏",
@@ -254,11 +258,11 @@ enum AppLocalization {
         .codexOutputClosed: "Codex 输出管道已关闭。",
         .codexStopped: "Codex 连接已停止。",
         .updateNotPackaged: "更新功能只能从已打包的 Codex Credit Bar App 运行。",
-        .noRelease: "GitHub 上暂无可用的 autobuild Release。",
+        .noRelease: "GitHub 上暂无可用的 autobuild 更新清单。",
         .checkUpdateFailed: "无法检查更新：%@",
         .githubInvalidResponse: "GitHub 返回了无效响应。",
-        .assetMissing: "最新 Release 没有 Codex Credit Bar.app 附件。",
         .downloadFailed: "更新下载失败：%@",
+        .updateRateLimited: "GitHub 暂时拒绝更新请求，请在 %@ 后重试。",
         .invalidPackage: "下载的更新包不是有效的 Codex Credit Bar App。",
         .installFailed: "更新安装失败：%@",
         .updateBusy: "更新操作正在进行中。",
@@ -267,7 +271,6 @@ enum AppLocalization {
         .replaceFailedAndRestore: "更新替换失败，且恢复旧版本失败：%@",
         .launchUpdatedAndRestoreFailed: "无法启动更新后的 App，且恢复旧版本失败：%@",
         .launchUpdatedFailed: "无法启动更新后的 App：%@",
-        .handoffFailed: "更新后的 App 未能完成启动交接。"
     ]
 
     static func text(_ key: Key, language: AppLanguage = .current) -> String {

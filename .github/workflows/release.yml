@@ -2,21 +2,18 @@ name: Autobuild macOS Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
 
 concurrency:
   group: autobuild-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
     runs-on: macos-latest
-    env:
-      RELEASE_TAG: autobuild
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -28,74 +25,49 @@ jobs:
           swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
           swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
 
-      - name: Package app asset
+      - name: Package and verify app
         run: |
           APP_REVISION="$GITHUB_SHA" ./scripts/build-app.sh
-          # GitHub Release assets must be single files. Keep the bundle uncompressed
-          # GitHub rejects the .app extension for Release assets. Use an
-          # uncompressed tar stream and expose Codex Credit Bar.app as its display label.
-          tar -cf Codex.Credit.Bar.app.tar -C dist "Codex Credit Bar.app"
+          app='dist/Codex Credit Bar.app'
+          test -x "$app/Contents/MacOS/CodexMenuBarCredit"
+          test -f "$app/Contents/Resources/Codex Credit Bar.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = com.codexmenubarcredit.menu-bar
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSourceRevision' "$app/Contents/Info.plist")" = "$GITHUB_SHA"
+          tar -cf Codex.Credit.Bar.app.tar -C dist 'Codex Credit Bar.app'
+          tar -tf Codex.Credit.Bar.app.tar | grep -qx 'Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit'
+          sha256="$(shasum -a 256 Codex.Credit.Bar.app.tar | cut -d' ' -f1)"
+          versioned_asset="Codex.Credit.Bar.app.${GITHUB_SHA}.${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar"
+          cp Codex.Credit.Bar.app.tar "$versioned_asset"
+          printf '{"revision":"%s","asset_url":"https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar","versioned_asset_url":"https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/%s","digest":"sha256:%s","published_at":"%s"}\n' \
+            "$GITHUB_SHA" "$versioned_asset" "$sha256" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > update.json
 
-      - name: Verify package
-        run: |
-          test -f "dist/Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
-          test -x "dist/Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
-          test -f "dist/Codex Credit Bar.app/Contents/Info.plist"
-          test -f Codex.Credit.Bar.app.tar
-          tar -tf Codex.Credit.Bar.app.tar | grep -qx "Codex Credit Bar.app/Contents/MacOS/CodexMenuBarCredit"
-
-      - name: Replace autobuild Release
+      - name: Publish autobuild release
         env:
-          COMMIT_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Editing a release keeps its original published_at. Delete and recreate
-          # it so the fixed autobuild release always gets the current timestamp.
-          if release_id="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '.id' 2>/dev/null)"; then
-            gh api --method DELETE \
-              "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          if ! gh release view autobuild >/dev/null 2>&1; then
+            gh release create autobuild --target "$GITHUB_SHA" --title autobuild --latest \
+              --notes "Built from commit $GITHUB_SHA."
           fi
-
-          # A release deletion does not delete its tag, so move the tag explicitly
-          # before creating the replacement release at the current commit.
-          if gh api \
-            "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
-            >/dev/null 2>&1; then
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
-              -f sha="$COMMIT_SHA" \
-              -F force=true
-          else
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${RELEASE_TAG}" \
-              -f sha="$COMMIT_SHA"
-          fi
-
-          gh release create "$RELEASE_TAG" \
-            --target "$COMMIT_SHA" \
-            --title "autobuild" \
-            --latest \
-            --notes "自动构建自提交 ${COMMIT_SHA}。"
-
-          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
-          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
-          [[ "$tag_sha" == "$COMMIT_SHA" ]]
-
-          curl --fail --silent --show-error \
-            -X POST \
-            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=Codex.Credit.Bar.app.tar&label=Codex%20Credit%20Bar.app" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Content-Type: application/x-tar" \
-            --data-binary @Codex.Credit.Bar.app.tar
-
-          asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
-            --jq '[.[] | select(.name == "Codex.Credit.Bar.app.tar" and .label == "Codex Credit Bar.app")] | length')"
-          [[ "$asset_count" == "1" ]]
-
-          asset_digest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" \
-            --jq '[.[] | select(.name == "Codex.Credit.Bar.app.tar" and .label == "Codex Credit Bar.app")] | .[0].digest')"
-          [[ "$asset_digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]
+          versioned_asset="Codex.Credit.Bar.app.${GITHUB_SHA}.${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar"
+          gh release upload autobuild "$versioned_asset"
+          gh release upload autobuild 'Codex.Credit.Bar.app.tar#Codex Credit Bar.app' --clobber
+          digest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/autobuild" \
+            --jq '[.assets[] | select(.name == "Codex.Credit.Bar.app.tar")] | .[0].digest')"
+          [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]
+          [[ "$digest" == "sha256:$(shasum -a 256 Codex.Credit.Bar.app.tar | cut -d' ' -f1)" ]]
+          versioned_digest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/autobuild" \
+            --jq "[.assets[] | select(.name == \"$versioned_asset\")] | .[0].digest")"
+          [[ "$versioned_digest" == "$digest" ]]
+          gh release upload autobuild update.json --clobber
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/autobuild" \
+            -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          gh release edit autobuild --target "$GITHUB_SHA" --title autobuild --latest \
+            --notes "Built from commit $GITHUB_SHA."
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/autobuild" --jq .id)"
+          cutoff="$(date -u -v-7d '+%Y-%m-%dT%H:%M:%SZ')"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" --paginate |
+            jq -r --arg cutoff "$cutoff" '.[] | select(.name | test("^Codex[.]Credit[.]Bar[.]app[.][0-9a-f]{40}[.][0-9]+-[0-9]+[.]tar$")) | select(.created_at < $cutoff) | .id' |
+            while read -r asset_id; do
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" >/dev/null
+            done

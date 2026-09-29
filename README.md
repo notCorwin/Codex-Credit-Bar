@@ -17,7 +17,7 @@ Codex Credit Bar 是一个原生 macOS 菜单栏 App，用于快速查看 Codex 
 - 通过本机 `codex app-server` 读取状态，不直接复制或保存 Codex 访问令牌。
 - 启动 Codex CLI 时会保留 `CODEX_HOME`；没有显式代理环境变量时，应用也会尝试沿用 macOS 系统 HTTP、HTTPS、SOCKS 或 PAC 代理。
 - 可从菜单打开已安装的 ChatGPT macOS App、打开项目 GitHub 页面，或执行 `pmset displaysleepnow` 熄屏。
-- 每 3 分钟静默检查 GitHub `autobuild` Release；可用更新显示最新提交的 7 位哈希。点击更新菜单项后才会执行手动检查并询问是否下载、安装。
+- 每 15 秒读取 GitHub `autobuild` 更新清单，不占用 GitHub API 请求额度；默认自动验证、安装并重启。菜单可关闭自动安装；可用更新仍显示最新提交的 7 位哈希。
 
 ## 系统要求
 
@@ -65,7 +65,7 @@ tar -xf Codex.Credit.Bar.app.tar
 open "Codex Credit Bar.app"
 ```
 
-从 GitHub Release 启动的已打包 App 支持菜单内更新。`swift run` 适合开发和调试，不提供 App 自更新。
+从 GitHub Release 启动的已打包 App 支持菜单内更新。`autobuild` Release 包含固定名称安装包、`update.json` 和保留 7 天的版本化安装包。`swift run` 适合开发和调试，不提供 App 自更新。
 
 ### 从源码运行
 
@@ -101,8 +101,8 @@ make app
 
 - 账户数据自动每 15 秒刷新；打开菜单时会立即刷新账户数据，但不会触发软件版本检查。
 - 菜单内容每秒重绘，以更新重置倒计时和“多久之前发布”等相对时间。
-- 软件版本每 3 分钟静默检查一次；发现更新时只更新菜单项，不自动弹窗或安装。
-- 点击“检查更新”或显示可用版本的菜单项，会立即检查版本；发现更新后可确认下载并安装。
+- 软件版本每 15 秒静默检查一次；自动安装默认开启，发现更新后验证安装包并重启。自动安装失败或回滚后至少等待 5 分钟再自动重试。
+- 可在菜单中关闭“自动安装更新”。关闭后，发现更新只更新菜单项；点击已知可用更新会打开安装确认，尚无已知更新时点击“检查更新”会立即检查版本。
 - “打开 ChatGPT”只会打开本机已安装的 ChatGPT App，不会改为打开网页。
 - “熄屏”调用 macOS 的 `/usr/bin/pmset displaysleepnow`。
 

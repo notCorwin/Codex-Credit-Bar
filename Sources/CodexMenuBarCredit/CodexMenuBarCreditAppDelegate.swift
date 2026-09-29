@@ -3,7 +3,18 @@ import AppKit
 @MainActor
 final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     nonisolated private static let maxErrorItemCharacters = 240
+    nonisolated static let automaticUpdatesKey = "AutomaticallyInstallUpdates"
+    nonisolated static let updateCheckInterval: TimeInterval = 15
+    nonisolated static let automaticInstallRetryInterval: TimeInterval = 5 * 60
     private static let projectURL = URL(string: "https://github.com/notCorwin/Codex-Credit-Bar")!
+
+    nonisolated static func automaticUpdatesEnabled(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: automaticUpdatesKey) as? Bool ?? true
+    }
+
+    nonisolated static func canAutomaticallyInstall(retryAfter: Date?, now: Date = Date()) -> Bool {
+        retryAfter.map { $0 <= now } ?? true
+    }
 
     enum UpdateStatus {
         case idle
@@ -51,6 +62,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var lastError: Error?
     private var isCheckingForUpdate = false
     private var isInstallingUpdate = false
+    private var isPresentingUpdate = false
+    private var automaticInstallRetryAfter: Date?
+    private var availableUpdate: AppUpdate?
     private var displayedUpdateStatus: UpdateStatus = .idle
     private var lastUpdatePublishedAt: Date?
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
@@ -82,6 +96,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         action: #selector(checkForUpdatesNow),
         keyEquivalent: ""
     )
+    private lazy var automaticUpdatesItem = NSMenuItem(
+        title: AppLocalization.text(.automaticallyInstallUpdates, language: language),
+        action: #selector(toggleAutomaticUpdates),
+        keyEquivalent: ""
+    )
     private lazy var quitItem = NSMenuItem(
         title: AppLocalization.text(.quit, language: language),
         action: #selector(quit),
@@ -89,6 +108,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if ProcessInfo.processInfo.environment["CODEX_CREDIT_BAR_UPDATE_ROLLBACK"] == "1" {
+            automaticInstallRetryAfter = Date().addingTimeInterval(Self.automaticInstallRetryInterval)
+        }
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureMenu()
@@ -113,7 +135,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         RunLoop.main.add(menuRefreshTimer, forMode: .common)
         self.menuRefreshTimer = menuRefreshTimer
         let updateCheckTimer = Timer(
-            timeInterval: 3 * 60,
+            timeInterval: Self.updateCheckInterval,
             target: self,
             selector: #selector(checkForUpdatesAutomatically),
             userInfo: nil,
@@ -244,11 +266,25 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     @objc private func checkForUpdatesNow() {
-        checkForUpdates(silently: false)
+        if case .available = displayedUpdateStatus, let availableUpdate {
+            presentUpdate(availableUpdate)
+        } else {
+            checkForUpdates(silently: false)
+        }
     }
 
     @objc private func checkForUpdatesAutomatically() {
         checkForUpdates(silently: true)
+    }
+
+    @objc private func toggleAutomaticUpdates() {
+        let enabled = !Self.automaticUpdatesEnabled()
+        UserDefaults.standard.set(enabled, forKey: Self.automaticUpdatesKey)
+        automaticUpdatesItem.state = enabled ? .on : .off
+        if enabled, case .available = displayedUpdateStatus, let availableUpdate,
+           !isInstallingUpdate, !isPresentingUpdate {
+            installUpdate(availableUpdate, automatically: true)
+        }
     }
 
     @objc private func refreshMenuUI() {
@@ -301,12 +337,15 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         menu.addItem(NSMenuItem.separator())
         menu.addItem(starProjectItem)
         menu.addItem(checkForUpdatesItem)
+        menu.addItem(automaticUpdatesItem)
         menu.addItem(quitItem)
 
         openChatGPTItem.target = self
         starProjectItem.target = self
         turnOffDisplayItem.target = self
         checkForUpdatesItem.target = self
+        automaticUpdatesItem.target = self
+        automaticUpdatesItem.state = Self.automaticUpdatesEnabled() ? .on : .off
         quitItem.target = self
     }
 
@@ -480,6 +519,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func renderUpdateItem() {
+        if isInstallingUpdate {
+            checkForUpdatesItem.title = AppLocalization.text(.updateInstalling, language: language)
+            checkForUpdatesItem.isEnabled = false
+            return
+        }
         var title = displayedUpdateStatus.title(language: language)
         switch displayedUpdateStatus {
         case .idle, .checking:
@@ -534,7 +578,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func checkForUpdates(silently: Bool) {
-        guard !isCheckingForUpdate, !isInstallingUpdate else { return }
+        guard !isCheckingForUpdate, !isInstallingUpdate, !isPresentingUpdate else { return }
         isCheckingForUpdate = true
         applyUpdateStatus(.checking)
         updater.check { [weak self] result in
@@ -543,6 +587,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
             switch result {
             case .success(let update):
+                availableUpdate = update
                 lastUpdatePublishedAt = update?.publishedAt
                 guard let update else {
                     self.applyUpdateStatus(.latest)
@@ -557,12 +602,19 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 let revision = String(update.revision.prefix(7))
                 let status = UpdateStatus.available(revision)
                 self.applyUpdateStatus(status)
-                if !silently {
+                if Self.automaticUpdatesEnabled(),
+                   Self.canAutomaticallyInstall(retryAfter: automaticInstallRetryAfter) {
+                    installUpdate(update, automatically: true)
+                } else if !silently {
                     presentUpdate(update)
                 }
             case .failure(let error):
-                lastUpdatePublishedAt = nil
-                applyUpdateStatus(.failed)
+                if let availableUpdate {
+                    applyUpdateStatus(.available(String(availableUpdate.revision.prefix(7))))
+                } else {
+                    lastUpdatePublishedAt = nil
+                    applyUpdateStatus(.failed)
+                }
                 if !silently {
                     showAlert(
                         title: AppLocalization.text(.updateFailed, language: language),
@@ -579,6 +631,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func presentUpdate(_ update: AppUpdate) {
+        guard !isInstallingUpdate, !isPresentingUpdate else { return }
+        isPresentingUpdate = true
         let alert = NSAlert()
         alert.messageText = AppLocalization.text(.newVersionTitle, language: language)
         let revision = update.revision == "unknown"
@@ -587,23 +641,34 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         alert.informativeText = "\(update.name)\(revision)\n\(AppLocalization.text(.updatePrompt, language: language))"
         alert.addButton(withTitle: AppLocalization.text(.update, language: language))
         alert.addButton(withTitle: AppLocalization.text(.later, language: language))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let shouldInstall = alert.runModal() == .alertFirstButtonReturn
+        isPresentingUpdate = false
+        guard shouldInstall else { return }
 
+        installUpdate(update, automatically: false)
+    }
+
+    private func installUpdate(_ update: AppUpdate, automatically: Bool) {
+        guard !isInstallingUpdate else { return }
         isInstallingUpdate = true
         renderUpdateItem()
         updater.downloadAndInstall(update) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success:
-                // AppUpdater launches the new bundle before its handoff process exits this one.
-                break
+                NSApp.terminate(nil)
             case .failure(let error):
                 isInstallingUpdate = false
+                if automatically {
+                    automaticInstallRetryAfter = Date().addingTimeInterval(Self.automaticInstallRetryInterval)
+                }
                 renderUpdateItem()
-                showAlert(
-                    title: AppLocalization.text(.updateInstallFailedTitle, language: language),
-                    message: error.localizedDescription
-                )
+                if !automatically {
+                    showAlert(
+                        title: AppLocalization.text(.updateInstallFailedTitle, language: language),
+                        message: error.localizedDescription
+                    )
+                }
             }
         }
     }
@@ -617,6 +682,12 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     private func signalReadinessIfRequested() {
+        if let path = Self.pidMarkerPath(in: ProcessInfo.processInfo.environment) {
+            FileManager.default.createFile(
+                atPath: path,
+                contents: Data(String(ProcessInfo.processInfo.processIdentifier).utf8)
+            )
+        }
         guard let path = Self.readinessMarkerPath(in: ProcessInfo.processInfo.environment) else {
             return
         }
@@ -625,6 +696,13 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
     nonisolated static func readinessMarkerPath(in environment: [String: String]) -> String? {
         guard let path = environment["CODEX_CREDIT_BAR_READY_FILE"], !path.isEmpty else {
+            return nil
+        }
+        return path
+    }
+
+    nonisolated static func pidMarkerPath(in environment: [String: String]) -> String? {
+        guard let path = environment["CODEX_CREDIT_BAR_PID_FILE"], !path.isEmpty else {
             return nil
         }
         return path

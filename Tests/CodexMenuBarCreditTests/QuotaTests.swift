@@ -184,6 +184,51 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(status.isInteractive)
     }
 
+    func testAutomaticUpdatesDefaultToOnAndRespectRetryDelay() throws {
+        let name = "CodexMenuBarCreditTests-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        XCTAssertTrue(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
+        defaults.set(false, forKey: CodexMenuBarCreditAppDelegate.automaticUpdatesKey)
+        XCTAssertFalse(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(CodexMenuBarCreditAppDelegate.updateCheckInterval, 15)
+        XCTAssertEqual(CodexMenuBarCreditAppDelegate.automaticInstallRetryInterval, 300)
+        XCTAssertFalse(CodexMenuBarCreditAppDelegate.canAutomaticallyInstall(
+            retryAfter: now.addingTimeInterval(300), now: now
+        ))
+        XCTAssertTrue(CodexMenuBarCreditAppDelegate.canAutomaticallyInstall(
+            retryAfter: now.addingTimeInterval(300), now: now.addingTimeInterval(300)
+        ))
+    }
+
+    @MainActor
+    func testAutomaticUpdateMenuTogglePersistsWithoutReplacingItsRow() throws {
+        let key = CodexMenuBarCreditAppDelegate.automaticUpdatesKey
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        UserDefaults.standard.removeObject(forKey: key)
+
+        let delegate = CodexMenuBarCreditAppDelegate()
+        delegate.configureMenu()
+        let title = AppLocalization.text(.automaticallyInstallUpdates)
+        let item = try XCTUnwrap(delegate.menu.items.first(where: { $0.title == title }))
+        XCTAssertEqual(item.state, .on)
+        XCTAssertTrue(NSApplication.shared.sendAction(
+            try XCTUnwrap(item.action), to: item.target, from: item
+        ))
+        XCTAssertFalse(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled())
+        XCTAssertEqual(item.state, .off)
+        XCTAssertTrue(delegate.menu.items.contains(where: { $0 === item }))
+    }
+
     func testResetCreditSeparatorRequiresBothMenuSections() {
         XCTAssertTrue(
             CodexMenuBarCreditAppDelegate.shouldShowResetCreditSeparator(
@@ -989,6 +1034,13 @@ final class QuotaTests: XCTestCase {
             )
         )
         XCTAssertNil(CodexMenuBarCreditAppDelegate.readinessMarkerPath(in: [:]))
+        XCTAssertEqual(
+            CodexMenuBarCreditAppDelegate.pidMarkerPath(
+                in: ["CODEX_CREDIT_BAR_PID_FILE": "/tmp/pid"]
+            ),
+            "/tmp/pid"
+        )
+        XCTAssertNil(CodexMenuBarCreditAppDelegate.pidMarkerPath(in: [:]))
     }
 
     func testCodexClientProvidesSystemPathToCLI() throws {
@@ -1526,7 +1578,7 @@ final class QuotaTests: XCTestCase {
         wait(for: [expectation], timeout: 5)
     }
 
-    func testReleaseRevisionIsReadFromBuildNotes() {
+    func testRevisionParserFindsBuildRevision() {
         XCTAssertEqual(
             AppUpdater.revision(in: "自动构建自提交 0123456789abcdef0123456789abcdef01234567。"),
             "0123456789abcdef0123456789abcdef01234567"
@@ -1534,10 +1586,10 @@ final class QuotaTests: XCTestCase {
         XCTAssertNil(AppUpdater.revision(in: "没有提交信息"))
     }
 
-    func testUpdateCheckUsesCanonicalReleaseRepository() {
+    func testUpdateCheckUsesReleaseManifest() {
         XCTAssertEqual(
-            AppUpdater.releaseAPIURL.absoluteString,
-            "https://api.github.com/repos/notCorwin/Codex-Credit-Bar/releases/tags/autobuild"
+            AppUpdater.manifestURL.absoluteString,
+            "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/update.json"
         )
     }
 
@@ -1751,126 +1803,112 @@ final class QuotaTests: XCTestCase {
         reference.value = nil
     }
 
-    func testReleaseTargetCommitIsUsedWhenReleaseNotesHaveNoRevision() throws {
-        let revision = "0123456789abcdef0123456789abcdef01234567"
-        let json = """
-        {
-          "name": "autobuild",
-          "body": "",
-          "target_commitish": "\(revision)",
-          "assets": [
-            {
-              "name": "Codex.Credit.Bar.app.tar",
-              "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
-            }
-          ]
-        }
-        """.data(using: .utf8)!
-
-        let result = AppUpdater.parse(data: json, currentRevision: revision)
-
-        guard case .success(let update) = result else {
-            XCTFail("Expected the release to be parsed successfully")
-            return
-        }
-        XCTAssertNil(update)
-    }
-
-    func testReleaseWithDifferentTargetCommitIsAvailable() throws {
-        let currentRevision = "0123456789abcdef0123456789abcdef01234567"
-        let releaseRevision = "fedcba9876543210fedcba9876543210fedcba98"
+    func testManifestSelectsRevisionBoundAssetAndRecognizesInstalledRevision() throws {
+        let revision = "fedcba9876543210fedcba9876543210fedcba98"
         let digest = String(repeating: "A", count: 64)
+        let versionedURL = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
         let json = """
         {
-          "name": "autobuild",
-          "published_at": "2026-09-07T00:00:00Z",
-          "body": "没有提交信息",
-          "target_commitish": "\(releaseRevision)",
-          "assets": [
-            {
-              "name": "Codex.Credit.Bar.app.tar",
-              "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
-              "digest": "sha256:\(digest)"
-            }
-          ]
+          "revision": "\(revision)",
+          "asset_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
+          "versioned_asset_url": "\(versionedURL)",
+          "digest": "sha256:\(digest)",
+          "published_at": "2026-09-07T00:00:00Z"
         }
         """.data(using: .utf8)!
 
-        let result = AppUpdater.parse(data: json, currentRevision: currentRevision)
-
-        guard case .success(let update) = result else {
-            XCTFail("Expected the release to be parsed successfully")
-            return
+        guard case .success(let available) = AppUpdater.parse(
+            data: json,
+            currentRevision: String(repeating: "0", count: 40)
+        ) else {
+            return XCTFail("Expected an available update")
         }
-        XCTAssertEqual(update?.revision, releaseRevision)
-        XCTAssertEqual(update?.expectedSHA256, digest.lowercased())
-        XCTAssertEqual(update?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
+        XCTAssertEqual(available?.revision, revision)
+        XCTAssertEqual(available?.assetURL.absoluteString, versionedURL)
+        XCTAssertEqual(available?.expectedSHA256, digest.lowercased())
+        XCTAssertEqual(available?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
+
+        guard case .success(let latest) = AppUpdater.parse(data: json, currentRevision: revision) else {
+            return XCTFail("Expected the installed revision to be current")
+        }
+        XCTAssertNil(latest)
     }
 
-    func testReleaseWithoutDigestIsRejectedWhenAnUpdateIsAvailable() throws {
-        let currentRevision = "0123456789abcdef0123456789abcdef01234567"
-        let releaseRevision = "fedcba9876543210fedcba9876543210fedcba98"
-        let json = """
-        {
-          "target_commitish": "\(releaseRevision)",
-          "assets": [
-            {
-              "name": "Codex.Credit.Bar.app.tar",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
-            }
-          ]
-        }
-        """.data(using: .utf8)!
+    func testManifestRejectsMissingDigestAndUnexpectedAssets() throws {
+        let revision = "fedcba9876543210fedcba9876543210fedcba98"
+        let canonical = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+        let versioned = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
+        let valid: [String: String] = [
+            "revision": revision,
+            "asset_url": canonical,
+            "versioned_asset_url": versioned,
+            "digest": "sha256:" + String(repeating: "a", count: 64)
+        ]
+        var cases: [[String: String]] = []
+        var missingDigest = valid
+        missingDigest.removeValue(forKey: "digest")
+        cases.append(missingDigest)
+        var wrongCanonical = valid
+        wrongCanonical["asset_url"] = "https://example.com/Codex.Credit.Bar.app.tar"
+        cases.append(wrongCanonical)
+        var mismatchedVersioned = valid
+        mismatchedVersioned["versioned_asset_url"] = versioned.replacingOccurrences(
+            of: revision,
+            with: String(repeating: "0", count: 40)
+        )
+        cases.append(mismatchedVersioned)
+        var malformedRevision = valid
+        malformedRevision["revision"] = "not-a-commit"
+        cases.append(malformedRevision)
 
-        let result = AppUpdater.parse(data: json, currentRevision: currentRevision)
-
-        guard case .failure(AppUpdateError.invalidResponse) = result else {
-            XCTFail("Expected a release without a digest to be rejected")
-            return
-        }
-    }
-
-    func testReleaseRejectsUntrustedAssetURL() throws {
-        let revision = "0123456789abcdef0123456789abcdef01234567"
-        for assetURL in [
-            "http://example.com/Codex.Credit.Bar.app.tar",
-            "https://example.com/Codex.Credit.Bar.app.tar",
-            "https://github.com/other/repository/releases/download/autobuild/Codex.Credit.Bar.app.tar",
-            "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/archive/Codex.Credit.Bar.app.tar",
-            "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/other.tar",
-            "https://github.com:443/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar?download=1"
-        ] {
-            let json = """
-            {
-              "target_commitish": "\(revision)",
-              "assets": [
-                {
-                  "name": "Codex.Credit.Bar.app.tar",
-                  "browser_download_url": "\(assetURL)"
-                }
-              ]
-            }
-            """.data(using: .utf8)!
-
-            guard case .failure(AppUpdateError.invalidResponse) = AppUpdater.parse(
-                data: json,
-                currentRevision: nil
-            ) else {
-                XCTFail("Expected an untrusted asset URL to be rejected")
-                return
+        for manifest in cases {
+            let data = try JSONSerialization.data(withJSONObject: manifest)
+            guard case .failure(.invalidResponse) = AppUpdater.parse(data: data, currentRevision: nil) else {
+                return XCTFail("Expected invalid manifest: \(manifest)")
             }
         }
     }
 
-    func testOnlyCanonicalAssetURLIsAccepted() throws {
-        XCTAssertTrue(AppUpdater.isCanonicalAssetURL(
-            try XCTUnwrap(URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"))
+    func testRateLimitHonorsResponseHeaders() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let url = try XCTUnwrap(URL(string: "https://github.com"))
+        let primary = try XCTUnwrap(HTTPURLResponse(
+            url: url,
+            statusCode: 403,
+            httpVersion: nil,
+            headerFields: ["X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "2000"]
         ))
-        XCTAssertFalse(AppUpdater.isCanonicalAssetURL(
-            try XCTUnwrap(URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar?download=1"))
+        XCTAssertEqual(AppUpdater.retryDate(for: primary, now: now), Date(timeIntervalSince1970: 2_001))
+        let secondary = try XCTUnwrap(HTTPURLResponse(
+            url: url,
+            statusCode: 429,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "120"]
         ))
+        XCTAssertEqual(AppUpdater.retryDate(for: secondary, now: now), Date(timeIntervalSince1970: 1_120))
+        let generic = try XCTUnwrap(HTTPURLResponse(
+            url: url,
+            statusCode: 403,
+            httpVersion: nil,
+            headerFields: [:]
+        ))
+        XCTAssertEqual(AppUpdater.retryDate(for: generic, now: now), Date(timeIntervalSince1970: 1_060))
+    }
+
+    func testCanonicalAndRevisionSpecificUpdateURLs() throws {
+        let revision = String(repeating: "a", count: 40)
+        let canonical = try XCTUnwrap(URL(string:
+            "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+        ))
+        let versioned = try XCTUnwrap(URL(string:
+            "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
+        ))
+        XCTAssertTrue(AppUpdater.isCanonicalAssetURL(canonical))
+        XCTAssertTrue(AppUpdater.isExpectedAssetURL(versioned, revision: revision))
+        XCTAssertFalse(AppUpdater.isExpectedAssetURL(versioned, revision: String(repeating: "b", count: 40)))
+        XCTAssertFalse(AppUpdater.isCanonicalAssetURL(try XCTUnwrap(URL(string:
+            canonical.absoluteString + "?download=1"
+        ))))
     }
 
     func testUpdateExecutableMustBeInsideBundleMacOSDirectory() {
@@ -1961,60 +1999,85 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(leftovers.isEmpty, "Unexpected updater leftovers: \(leftovers)")
     }
 
-    func testDefaultRelauncherRestoresWhenNewAppDoesNotSignalReadiness() throws {
+    func testRelaunchWaitsForOldProcessAndUsesLaunchServices() throws {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)", isDirectory: true)
-        let currentApp = root.appendingPathComponent("Codex Credit Bar.app", isDirectory: true)
-        let updateRoot = root.appendingPathComponent("update", isDirectory: true)
-        let updateApp = updateRoot.appendingPathComponent("Codex Credit Bar.app", isDirectory: true)
-        let archive = root.appendingPathComponent("update.tar")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            .appendingPathComponent("CodexCreditBarRelaunchTests-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let app = root.appendingPathComponent("Codex Credit Bar.app")
+        let backup = root.appendingPathComponent("backup.app")
+        let log = root.appendingPathComponent("open.log")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        let opener = try makeFakeOpener(in: root, fail: false)
 
-        try makeTestApp(at: currentApp, marker: "old")
-        try makeTestApp(at: updateApp, marker: "new")
-        try runTar(arguments: ["-cf", archive.path, "-C", updateRoot.path, "Codex Credit Bar.app"])
-
-        let updater = AppUpdater(currentAppURL: currentApp)
-        XCTAssertThrowsError(try updater.install(downloadedFile: archive, expectedRevision: "unknown"))
-
-        let marker = currentApp
-            .appendingPathComponent("Contents", isDirectory: true)
-            .appendingPathComponent("Resources", isDirectory: true)
-            .appendingPathComponent("marker")
-        let deadline = Date().addingTimeInterval(7)
-        var restored = false
-        while Date() < deadline {
-            if (try? String(contentsOf: marker, encoding: .utf8)) == "old" {
-                restored = true
-                break
+        let oldApp = Process()
+        oldApp.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        oldApp.arguments = ["30"]
+        try oldApp.run()
+        defer {
+            if oldApp.isRunning {
+                oldApp.terminate()
+                oldApp.waitUntilExit()
             }
-            Thread.sleep(forTimeInterval: 0.1)
         }
-        XCTAssertTrue(restored, "The handoff should restore an app that never signals readiness")
-        let leftovers = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix(".CodexCreditBar-") }
-        XCTAssertTrue(leftovers.isEmpty, "Unexpected updater leftovers: \(leftovers)")
+
+        let helper = try runRelaunchHelper(
+            app: app, oldPID: oldApp.processIdentifier, backup: backup,
+            opener: opener, log: log
+        )
+        Thread.sleep(forTimeInterval: 0.3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
+
+        oldApp.terminate()
+        oldApp.waitUntilExit()
+        helper.waitUntilExit()
+        XCTAssertEqual(helper.terminationStatus, 0)
+        let arguments = try String(contentsOf: log, encoding: .utf8)
+        XCTAssertTrue(arguments.contains("-a\n\(app.path)\n"))
+        XCTAssertFalse(arguments.contains("-n\n"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
     }
 
-    func testReleaseRequiresCanonicalAssetName() throws {
+    func testRelaunchRestoresBackupWhenNewAppFails() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexCreditBarRelaunchTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let app = root.appendingPathComponent("Codex Credit Bar.app")
+        let backup = root.appendingPathComponent("backup.app")
+        let log = root.appendingPathComponent("open.log")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: backup.appendingPathComponent("marker"))
+        let opener = try makeFakeOpener(in: root, fail: true)
+
+        let helper = try runRelaunchHelper(
+            app: app, oldPID: Int32.max, backup: backup,
+            opener: opener, log: log
+        )
+        helper.waitUntilExit()
+        XCTAssertNotEqual(helper.terminationStatus, 0)
+        XCTAssertEqual(try String(contentsOf: app.appendingPathComponent("marker"), encoding: .utf8), "old")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertTrue(try String(contentsOf: log, encoding: .utf8).contains("CODEX_CREDIT_BAR_UPDATE_ROLLBACK=1"))
+    }
+
+    func testManifestRequiresCanonicalAssetURL() throws {
+        let revision = String(repeating: "a", count: 40)
         let json = """
         {
-          "assets": [
-            {
-              "name": "Codex Credit Bar.app.tar",
-              "label": "Codex Credit Bar.app",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex%20Credit%20Bar.app.tar"
-            }
-          ]
+          "revision": "\(revision)",
+          "asset_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex%20Credit%20Bar.app.tar",
+          "digest": "sha256:\(String(repeating: "b", count: 64))"
         }
         """.data(using: .utf8)!
 
-        guard case .failure(AppUpdateError.assetMissing) = AppUpdater.parse(
+        guard case .failure(AppUpdateError.invalidResponse) = AppUpdater.parse(
             data: json,
             currentRevision: nil
         ) else {
-            XCTFail("Expected a non-canonical asset name to be ignored")
+            XCTFail("Expected a non-canonical asset URL to be rejected")
             return
         }
     }
@@ -2105,19 +2168,50 @@ final class QuotaTests: XCTestCase {
 
     private func updateReleaseData() -> Data {
         let digest = String(repeating: "a", count: 64)
+        let revision = "fedcba9876543210fedcba9876543210fedcba98"
         return """
         {
-          "name": "autobuild",
-          "target_commitish": "fedcba9876543210fedcba9876543210fedcba98",
-          "assets": [
-            {
-              "name": "Codex.Credit.Bar.app.tar",
-              "browser_download_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
-              "digest": "sha256:\(digest)"
-            }
-          ]
+          "revision": "\(revision)",
+          "asset_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
+          "versioned_asset_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar",
+          "digest": "sha256:\(digest)"
         }
         """.data(using: .utf8)!
+    }
+
+    private func makeFakeOpener(in root: URL, fail: Bool) throws -> URL {
+        let opener = root.appendingPathComponent("open")
+        let body = fail ? "exit 1" : """
+        for argument in "$@"; do
+            case "$argument" in
+                CODEX_CREDIT_BAR_PID_FILE=*) pid_file="$(printf '%s' "$argument" | /usr/bin/cut -d= -f2-)" ;;
+                CODEX_CREDIT_BAR_READY_FILE=*) ready_file="$(printf '%s' "$argument" | /usr/bin/cut -d= -f2-)" ;;
+            esac
+        done
+        printf '%s' "$CODEX_CREDIT_BAR_TEST_PID" > "$pid_file"
+        /usr/bin/touch "$ready_file"
+        """
+        let script = "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$CODEX_CREDIT_BAR_TEST_LOG\"\n\(body)\n"
+        try Data(script.utf8).write(to: opener)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: opener.path)
+        return opener
+    }
+
+    private func runRelaunchHelper(
+        app: URL, oldPID: Int32, backup: URL, opener: URL, log: URL
+    ) throws -> Process {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c", AppUpdater.defaultRelauncherScript, "Codex Credit Bar updater",
+            app.path, String(oldPID), backup.path, opener.path
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["CODEX_CREDIT_BAR_TEST_LOG"] = log.path
+        environment["CODEX_CREDIT_BAR_TEST_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        process.environment = environment
+        try process.run()
+        return process
     }
 
     private func makeTestApp(at appURL: URL, marker: String) throws {
