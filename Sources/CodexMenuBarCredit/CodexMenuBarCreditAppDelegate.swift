@@ -9,7 +9,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private static let projectURL = URL(string: "https://github.com/notCorwin/Codex-Credit-Bar")!
 
     nonisolated static func automaticUpdatesEnabled(in defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: automaticUpdatesKey) as? Bool ?? true
+        defaults.object(forKey: automaticUpdatesKey) as? Bool ?? false
     }
 
     nonisolated static func canAutomaticallyInstall(retryAfter: Date?, now: Date = Date()) -> Bool {

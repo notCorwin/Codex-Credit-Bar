@@ -184,12 +184,16 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(status.isInteractive)
     }
 
-    func testAutomaticUpdatesDefaultToOnAndRespectRetryDelay() throws {
+    func testAutomaticUpdatesDefaultToOffAndRespectSavedChoicesAndRetryDelay() throws {
         let name = "CodexMenuBarCreditTests-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
+        XCTAssertFalse(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
+        defaults.set(true, forKey: CodexMenuBarCreditAppDelegate.automaticUpdatesKey)
         XCTAssertTrue(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
         defaults.set(false, forKey: CodexMenuBarCreditAppDelegate.automaticUpdatesKey)
+        XCTAssertFalse(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
+        defaults.removeObject(forKey: CodexMenuBarCreditAppDelegate.automaticUpdatesKey)
         XCTAssertFalse(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled(in: defaults))
 
         let now = Date(timeIntervalSince1970: 1_000)
@@ -220,7 +224,19 @@ final class QuotaTests: XCTestCase {
         delegate.configureMenu()
         let title = AppLocalization.text(.automaticallyInstallUpdates)
         let item = try XCTUnwrap(delegate.menu.items.first(where: { $0.title == title }))
+        XCTAssertEqual(item.state, .off)
+        XCTAssertTrue(NSApplication.shared.sendAction(
+            try XCTUnwrap(item.action), to: item.target, from: item
+        ))
+        XCTAssertTrue(CodexMenuBarCreditAppDelegate.automaticUpdatesEnabled())
         XCTAssertEqual(item.state, .on)
+        XCTAssertTrue(delegate.menu.items.contains(where: { $0 === item }))
+
+        let restartedDelegate = CodexMenuBarCreditAppDelegate()
+        restartedDelegate.configureMenu()
+        let restoredItem = try XCTUnwrap(restartedDelegate.menu.items.first(where: { $0.title == title }))
+        XCTAssertEqual(restoredItem.state, .on)
+
         XCTAssertTrue(NSApplication.shared.sendAction(
             try XCTUnwrap(item.action), to: item.target, from: item
         ))
@@ -1829,6 +1845,27 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(available?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
 
         guard case .success(let latest) = AppUpdater.parse(data: json, currentRevision: revision) else {
+            return XCTFail("Expected the installed revision to be current")
+        }
+        XCTAssertNil(latest)
+    }
+
+    func testRollingManifestUsesCanonicalAssetAndRecognizesInstalledRevision() throws {
+        let revision = String(repeating: "a", count: 40)
+        let canonicalURL = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
+        let digest = String(repeating: "b", count: 64)
+        let data = try JSONSerialization.data(withJSONObject: [
+            "revision": revision,
+            "asset_url": canonicalURL,
+            "digest": "sha256:\(digest)",
+        ])
+        guard case .success(let available) = AppUpdater.parse(data: data, currentRevision: nil) else {
+            return XCTFail("Expected a rolling autobuild update")
+        }
+        XCTAssertEqual(available?.revision, revision)
+        XCTAssertEqual(available?.assetURL.absoluteString, canonicalURL)
+        XCTAssertEqual(available?.expectedSHA256, digest)
+        guard case .success(let latest) = AppUpdater.parse(data: data, currentRevision: revision) else {
             return XCTFail("Expected the installed revision to be current")
         }
         XCTAssertNil(latest)

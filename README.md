@@ -17,7 +17,7 @@ Codex Credit Bar 是一个原生 macOS 菜单栏 App，用于快速查看 Codex 
 - 通过本机 `codex app-server` 读取状态，不直接复制或保存 Codex 访问令牌。
 - 启动 Codex CLI 时会保留 `CODEX_HOME`；没有显式代理环境变量时，应用也会尝试沿用 macOS 系统 HTTP、HTTPS、SOCKS 或 PAC 代理。
 - 可从菜单打开已安装的 ChatGPT macOS App、打开项目 GitHub 页面，或执行 `pmset displaysleepnow` 熄屏。
-- 每 15 秒读取 GitHub `autobuild` 更新清单，不占用 GitHub API 请求额度；默认自动验证、安装并重启。菜单可关闭自动安装；可用更新仍显示最新提交的 7 位哈希。
+- 每 15 秒读取 GitHub `autobuild` 更新清单，不占用 GitHub API 请求额度；自动安装默认关闭，可在菜单中开启。默认由用户确认后验证、安装并重启；可用更新仍显示最新提交的 7 位哈希。已保存的自动安装开关选择继续生效。
 
 ## 系统要求
 
@@ -65,7 +65,7 @@ tar -xf Codex.Credit.Bar.app.tar
 open "Codex Credit Bar.app"
 ```
 
-从 GitHub Release 启动的已打包 App 支持菜单内更新。`autobuild` Release 包含固定名称安装包、`update.json` 和保留 7 天的版本化安装包。`swift run` 适合开发和调试，不提供 App 自更新。
+从 GitHub Release 启动的已打包 App 支持菜单内更新。每次推送 `main` 都会自动构建并滚动覆盖 `autobuild` Release，只保留最新的 `Codex.Credit.Bar.app.tar` 和 `update.json`；新包校验通过且更新清单发布后，自动删除历史附件。Release 说明显示最新构建时间、提交和下载链接。`swift run` 适合开发和调试，不提供 App 自更新。
 
 ### 从源码运行
 
