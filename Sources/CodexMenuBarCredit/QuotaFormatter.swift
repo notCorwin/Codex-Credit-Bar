@@ -8,30 +8,20 @@ enum QuotaFormatter {
 
     static func statusTitle(
         for quota: CodexQuota?,
-        includingProductName: Bool = true,
         now: Date = Date(),
         language: AppLanguage = .simplifiedChinese
     ) -> String {
-        let value: String
-        if quota == nil {
-            value = "…"
-        } else if quota?.credits?.unlimited == true {
-            value = "∞"
-        } else if let quota, let window = quota.statusWindow {
-            if window.remainingPercent > 0 {
-                value = "\(window.remainingPercent)%"
-            } else if statusUsesCredits(for: quota),
-                      let balance = creditsBalance(for: quota.credits) {
-                value = balance
-            } else if let remaining = remainingTime(at: window.resetsAt, now: now, language: language) {
-                value = remaining
-            } else {
-                value = "\(window.remainingPercent)%"
-            }
-        } else {
-            value = "—"
+        guard let quota else { return "…" }
+        if quota.credits?.unlimited == true { return "∞" }
+        guard let window = quota.statusWindow else { return "—" }
+        if window.remainingPercent > 0 {
+            return "\(window.remainingPercent)%"
         }
-        return includingProductName ? "Codex \(value)" : value
+        if statusUsesCredits(for: quota), let balance = creditsBalance(for: quota.credits) {
+            return balance
+        }
+        return remainingTime(at: window.resetsAt, now: now, language: language)
+            ?? "\(window.remainingPercent)%"
     }
 
     static func statusUsesCredits(for quota: CodexQuota?) -> Bool {
@@ -111,22 +101,13 @@ enum QuotaFormatter {
         case 7 * 24 * 60:
             return AppLocalization.text(.weeklyLimit, language: language)
         default:
-            return windowName(for: duration, language: language)
+            break
         }
-    }
-
-    static func windowName(
-        for duration: Int64?,
-        language: AppLanguage = .simplifiedChinese
-    ) -> String {
         guard let duration, duration > 0 else {
             return AppLocalization.text(.quota, language: language)
         }
         if duration % (24 * 60) == 0 {
             let days = duration / (24 * 60)
-            if days == 7 {
-                return AppLocalization.text(.weeklyQuota, language: language)
-            }
             return AppLocalization.format(.dayQuota, language: language, String(days))
         }
         if duration % 60 == 0 {
@@ -149,9 +130,9 @@ enum QuotaFormatter {
         }
         let (seconds, overflow) = timestamp.subtractingReportingOverflow(nowSeconds)
         guard !overflow else {
-            return durationDescription(Int64.max, longMinute: true, language: language)
+            return durationDescription(Int64.max, language: language)
         }
-        return durationDescription(seconds, longMinute: true, language: language)
+        return durationDescription(seconds, language: language)
     }
 
     static func resetDescription(
@@ -189,28 +170,6 @@ enum QuotaFormatter {
         return AppLocalization.format(.expiresIn, language: language, remaining)
     }
 
-    static func resetCreditExpiration(at timestamp: Int64?, timeZone: TimeZone = .current) -> String? {
-        guard let timestamp else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
-    }
-
-    static func timeZoneLabel(_ timeZone: TimeZone = .current) -> String {
-        let offset = timeZone.secondsFromGMT()
-        let sign = offset < 0 ? "-" : "+"
-        let absoluteMinutes = abs(offset) / 60
-        let hours = absoluteMinutes / 60
-        let minutes = absoluteMinutes % 60
-        if minutes == 0 {
-            return "UTC\(sign)\(hours)"
-        }
-        return "UTC\(sign)\(String(format: "%02d:%02d", hours, minutes))"
-    }
-
     static func lastUpdated(
         _ date: Date,
         now: Date = Date(),
@@ -231,7 +190,7 @@ enum QuotaFormatter {
         return AppLocalization.format(
             .ago,
             language: language,
-            durationDescription(seconds, longMinute: true, language: language)
+            durationDescription(seconds, language: language)
         )
     }
 
@@ -244,7 +203,6 @@ enum QuotaFormatter {
 
     private static func durationDescription(
         _ seconds: Int64,
-        longMinute: Bool = false,
         language: AppLanguage
     ) -> String {
         var remaining = seconds
@@ -262,7 +220,6 @@ enum QuotaFormatter {
                 let name = AppLocalization.durationUnit(
                     durationUnit,
                     count: count,
-                    longMinute: longMinute,
                     language: language
                 )
                 parts.append("\(count) \(name)")

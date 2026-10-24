@@ -24,7 +24,6 @@ enum AppLanguage: String, Equatable, Sendable {
 enum AppLocalization {
     enum Key: Hashable {
         case updateCheck
-        case updateChecking
         case updateInstalling
         case updateFailed
         case updateAvailable
@@ -61,7 +60,6 @@ enum AppLocalization {
         case fiveHourLimit
         case weeklyLimit
         case quota
-        case weeklyQuota
         case dayQuota
         case hourQuota
         case minuteQuota
@@ -113,7 +111,6 @@ enum AppLocalization {
 
     private static let english: [Key: String] = [
         .updateCheck: "Check for Updates",
-        .updateChecking: "Checking...",
         .updateInstalling: "Installing Update…",
         .updateFailed: "Update Check Failed",
         .updateAvailable: "Latest version available · %@",
@@ -150,7 +147,6 @@ enum AppLocalization {
         .fiveHourLimit: "5 hour usage limit",
         .weeklyLimit: "Weekly usage limit",
         .quota: "Quota",
-        .weeklyQuota: "Weekly quota",
         .dayQuota: "%@ day quota",
         .hourQuota: "%@ hour quota",
         .minuteQuota: "%@ minute quota",
@@ -194,7 +190,6 @@ enum AppLocalization {
 
     private static let simplifiedChinese: [Key: String] = [
         .updateCheck: "检查更新",
-        .updateChecking: "正在检查...",
         .updateInstalling: "正在安装更新…",
         .updateFailed: "检查更新失败",
         .updateAvailable: "有最新版本可用 · %@",
@@ -231,7 +226,6 @@ enum AppLocalization {
         .fiveHourLimit: "5 小时使用限额",
         .weeklyLimit: "每周使用限额",
         .quota: "额度",
-        .weeklyQuota: "周额度",
         .dayQuota: "%@ 天额度",
         .hourQuota: "%@ 小时额度",
         .minuteQuota: "%@ 分钟额度",
@@ -289,7 +283,6 @@ enum AppLocalization {
     static func durationUnit(
         _ unit: DurationUnit,
         count: Int64,
-        longMinute: Bool = false,
         language: AppLanguage
     ) -> String {
         if language == .simplifiedChinese {
@@ -297,7 +290,7 @@ enum AppLocalization {
             case .year: return "年"
             case .day: return "天"
             case .hour: return "小时"
-            case .minute: return longMinute ? "分钟" : "分"
+            case .minute: return "分钟"
             case .second: return "秒"
             }
         }

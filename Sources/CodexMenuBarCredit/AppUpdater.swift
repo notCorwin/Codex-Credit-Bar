@@ -121,8 +121,6 @@ final class AppUpdater: @unchecked Sendable {
     private struct Manifest: Decodable {
         let revision: String
         let assetUrl: URL
-        let versionedAssetUrl: URL?
-        let immutableAssetUrl: URL?
         let digest: String
         let publishedAt: Date?
     }
@@ -335,7 +333,7 @@ final class AppUpdater: @unchecked Sendable {
             }
             return
         }
-        guard Self.isExpectedAssetURL(update.assetURL, revision: update.revision) else {
+        guard Self.isCanonicalAssetURL(update.assetURL) else {
             DispatchQueue.main.async {
                 completion(.failure(AppUpdateError.invalidResponse))
             }
@@ -459,12 +457,12 @@ final class AppUpdater: @unchecked Sendable {
         task.resume()
     }
 
-    static func revision(in body: String?) -> String? {
-        guard let body,
-              let range = body.range(of: "\\b[0-9a-fA-F]{40}\\b", options: .regularExpression) else {
+    private static func normalizedRevision(_ revision: String?) -> String? {
+        guard let revision, revision.count == 40,
+              revision.range(of: "^[0-9a-fA-F]{40}$", options: .regularExpression) != nil else {
             return nil
         }
-        return String(body[range]).lowercased()
+        return revision.lowercased()
     }
 
     private func parse(data: Data) -> Result<AppUpdate?, AppUpdateError> {
@@ -479,28 +477,19 @@ final class AppUpdater: @unchecked Sendable {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             decoder.dateDecodingStrategy = .iso8601
             let manifest = try decoder.decode(Manifest.self, from: data)
-            guard manifest.revision.count == 40,
-                  let releaseRevision = revision(in: manifest.revision),
-                  releaseRevision == manifest.revision.lowercased(),
-                  Self.isCanonicalAssetURL(manifest.assetUrl),
-                  Self.isExpectedAssetURL(
-                    manifest.versionedAssetUrl ?? manifest.immutableAssetUrl ?? manifest.assetUrl,
-                    revision: releaseRevision
-                  ) else {
+            guard let releaseRevision = normalizedRevision(manifest.revision),
+                  Self.isCanonicalAssetURL(manifest.assetUrl) else {
                 return .failure(AppUpdateError.invalidResponse)
             }
 
             let expectedSHA256 = try normalizedSHA256(from: manifest.digest)
-            if releaseRevision == revision(in: currentRevision) {
+            if releaseRevision == normalizedRevision(currentRevision) {
                 return .success(nil)
-            }
-            guard let expectedSHA256 else {
-                return .failure(AppUpdateError.invalidResponse)
             }
             return .success(AppUpdate(
                 name: "autobuild",
                 revision: releaseRevision,
-                assetURL: manifest.versionedAssetUrl ?? manifest.immutableAssetUrl ?? manifest.assetUrl,
+                assetURL: manifest.assetUrl,
                 expectedSHA256: expectedSHA256,
                 publishedAt: manifest.publishedAt
             ))
@@ -541,8 +530,7 @@ final class AppUpdater: @unchecked Sendable {
         return nil
     }
 
-    private static func normalizedSHA256(from digest: String?) throws -> String? {
-        guard let digest else { return nil }
+    private static func normalizedSHA256(from digest: String) throws -> String {
         let parts = digest.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2,
               parts[0].lowercased() == "sha256",
@@ -615,24 +603,6 @@ final class AppUpdater: @unchecked Sendable {
 
     static func isCanonicalAssetURL(_ url: URL) -> Bool {
         url.absoluteString == Self.canonicalAssetURL.absoluteString
-    }
-
-    static func isExpectedAssetURL(_ url: URL, revision: String) -> Bool {
-        if isCanonicalAssetURL(url) { return true }
-        let value = url.absoluteString
-        let legacyPrefix = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/build-\(revision)-"
-        let legacySuffix = "/Codex.Credit.Bar.app.tar"
-        let versionedPrefix = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision)."
-        let versionedSuffix = ".tar"
-        let run: Substring
-        if value.hasPrefix(legacyPrefix), value.hasSuffix(legacySuffix) {
-            run = value.dropFirst(legacyPrefix.count).dropLast(legacySuffix.count)
-        } else if value.hasPrefix(versionedPrefix), value.hasSuffix(versionedSuffix) {
-            run = value.dropFirst(versionedPrefix.count).dropLast(versionedSuffix.count)
-        } else {
-            return false
-        }
-        return run.range(of: #"^[0-9]+-[0-9]+$"#, options: .regularExpression) != nil
     }
 
     static func isExpectedExecutable(_ executableURL: URL, in appURL: URL) -> Bool {
@@ -845,12 +815,10 @@ final class AppUpdater: @unchecked Sendable {
               Self.isExecutableRegularFile(atPath: executable.path, fileManager: fileManager) else {
             throw AppUpdateError.invalidPackage
         }
-        if expectedRevision != "unknown" {
-            guard Self.revision(
-                in: bundle.object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String
-            ) == expectedRevision else {
-                throw AppUpdateError.invalidPackage
-            }
+        guard Self.normalizedRevision(
+            bundle.object(forInfoDictionaryKey: "CFBundleSourceRevision") as? String
+        ) == expectedRevision else {
+            throw AppUpdateError.invalidPackage
         }
 
         let currentApp = currentAppURL

@@ -1,10 +1,7 @@
-import Foundation
-
 struct RateLimitsResponse: Decodable, Sendable {
     let rateLimits: RateLimitSnapshot
     let rateLimitsByLimitId: [String: RateLimitSnapshot]?
     let rateLimitResetCredits: RateLimitResetCreditsSummary?
-    let accountId: String?
 
     var codexRateLimits: RateLimitSnapshot {
         rateLimitsByLimitId?["codex"] ?? rateLimits
@@ -15,23 +12,11 @@ struct RateLimitsResponse: Decodable, Sendable {
     }
 }
 
-struct RateLimitSnapshot: Decodable, Equatable, Sendable {
+struct RateLimitSnapshot: Decodable, Sendable {
     let credits: CreditsSnapshot?
-    let individualLimit: SpendControlLimitSnapshot?
-    let limitId: String?
-    let limitName: String?
     let planType: String?
     let primary: RateLimitWindow?
-    let rateLimitReachedType: String?
     let secondary: RateLimitWindow?
-    let spendControlReached: Bool?
-}
-
-struct SpendControlLimitSnapshot: Decodable, Equatable, Sendable {
-    let limit: String
-    let used: String
-    let remainingPercent: Int
-    let resetsAt: Int64
 }
 
 struct RateLimitWindow: Decodable, Equatable, Sendable {
@@ -46,71 +31,46 @@ struct RateLimitWindow: Decodable, Equatable, Sendable {
     }
 }
 
-struct CreditsSnapshot: Decodable, Equatable, Sendable {
+struct CreditsSnapshot: Decodable, Sendable {
     let balance: String?
     let hasCredits: Bool
     let unlimited: Bool
 }
 
-struct RateLimitResetCreditsSummary: Decodable, Equatable, Sendable {
+struct RateLimitResetCreditsSummary: Decodable, Sendable {
     let availableCount: Int
     let credits: [RateLimitResetCredit]?
 }
 
-struct RateLimitResetCredit: Decodable, Equatable, Sendable {
-    let id: String?
-    let resetType: String?
-    let status: String?
-    let grantedAt: Int64?
+struct RateLimitResetCredit: Decodable, Sendable {
     let expiresAt: Int64?
-    let title: String?
-    let description: String?
     let expirationIsKnown: Bool
 
     init(expiresAt: Int64?, expirationIsKnown: Bool = true) {
-        self.id = nil
-        self.resetType = nil
-        self.status = nil
-        self.grantedAt = nil
         self.expiresAt = expiresAt
-        self.title = nil
-        self.description = nil
         self.expirationIsKnown = expirationIsKnown
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id
-        case resetType
-        case status
-        case grantedAt
         case expiresAt
-        case title
-        case description
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(String.self, forKey: .id)
-        resetType = try container.decodeIfPresent(String.self, forKey: .resetType)
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-        grantedAt = try container.decodeIfPresent(Int64.self, forKey: .grantedAt)
         expiresAt = try container.decodeIfPresent(Int64.self, forKey: .expiresAt)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        description = try container.decodeIfPresent(String.self, forKey: .description)
         expirationIsKnown = container.contains(.expiresAt)
     }
 }
 
-struct CodexQuota: Equatable, Sendable {
+struct CodexQuota: Sendable {
     private static let fiveHourWindowDurationMins: Int64 = 5 * 60
     private static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
 
     let snapshot: RateLimitSnapshot
     let availableResetCreditCount: Int
     let resetCredits: [RateLimitResetCredit]
-    let fetchedAt: Date
 
-    init(response: RateLimitsResponse, fetchedAt: Date = Date()) {
+    init(response: RateLimitsResponse) {
         self.snapshot = response.codexRateLimits
         self.availableResetCreditCount = response.availableResetCreditCount
         self.resetCredits = (response.rateLimitResetCredits?.credits ?? []).sorted {
@@ -125,7 +85,6 @@ struct CodexQuota: Equatable, Sendable {
                 return false
             }
         }
-        self.fetchedAt = fetchedAt
     }
 
     var primary: RateLimitWindow? {

@@ -19,17 +19,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     enum UpdateStatus {
         case idle
         case checking
-        case latest
-        case failed
         case available(String)
-
-        var title: String {
-            title(language: .simplifiedChinese)
-        }
 
         func title(language: AppLanguage) -> String {
             switch self {
-            case .idle, .checking, .latest, .failed:
+            case .idle, .checking:
                 return AppLocalization.text(.updateCheck, language: language)
             case .available(let revision):
                 return AppLocalization.format(.updateAvailable, language: language, revision)
@@ -38,7 +32,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         var isInteractive: Bool {
             switch self {
-            case .idle, .latest, .failed, .available:
+            case .idle, .available:
                 return true
             case .checking:
                 return false
@@ -66,7 +60,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private var automaticInstallRetryAfter: Date?
     private var availableUpdate: AppUpdate?
     private var displayedUpdateStatus: UpdateStatus = .idle
-    private var lastUpdatePublishedAt: Date?
     private let headerItem = NSMenuItem(title: "ChatGPT", action: nil, keyEquivalent: "")
     private let primaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let secondaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -159,11 +152,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         refreshNow()
     }
 
-    func menuDidClose(_ menu: NSMenu) {
-        guard !isTerminating else { return }
-        renderCurrentState()
-    }
-
     @objc private func refreshNow() {
         refreshNowWithRetry(allowingRetry: true)
     }
@@ -184,7 +172,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             case .success(let response):
                 quota = CodexQuota(response: response)
                 lastError = nil
-                renderQuota()
+                renderCurrentState()
             case .failure(let error):
                 lastError = error
                 renderCurrentState()
@@ -211,10 +199,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     }
 
     @objc private func openChatGPT() {
-        let bundleIdentifiers = ["com.openai.chat"]
-        guard let appURL = bundleIdentifiers
-            .compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) })
-            .first else {
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.chat") else {
             showAlert(
                 title: AppLocalization.text(.findChatGPTTitle, language: language),
                 message: AppLocalization.text(.findChatGPTMessage, language: language)
@@ -354,24 +339,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
-        setMenuItemHidden(creditsItem, true)
-        setMenuItemHidden(quotaSeparator, true)
-        setMenuItemHidden(resetCreditSeparator, true)
-        setMenuItemHidden(actionSeparator, true)
-        clearResetCreditItems()
-        setMenuItemHidden(errorItem, true)
+        creditsItem.isHidden = true
+        quotaSeparator.isHidden = true
+        resetCreditSeparator.isHidden = true
+        actionSeparator.isHidden = true
+        synchronizeResetCreditItems(count: 0)
+        errorItem.isHidden = true
         renderUpdateItem()
     }
 
     private func renderCurrentState() {
-        guard let quota else {
-            renderErrorWithoutQuota()
-            return
-        }
-        renderQuota(quota)
-    }
-
-    private func renderQuota() {
         guard let quota else {
             renderErrorWithoutQuota()
             return
@@ -392,24 +369,21 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
 
         if let description = QuotaFormatter.creditBalanceDescription(for: quota.credits, language: language) {
             creditsItem.title = description
-            setMenuItemHidden(creditsItem, false)
+            creditsItem.isHidden = false
         } else {
-            setMenuItemHidden(creditsItem, true)
+            creditsItem.isHidden = true
         }
 
         renderResetCredits(quota, now: now)
         let hasCredits = !creditsItem.isHidden
-        let hasResetCredits = resetCreditItems.contains { !$0.isHidden }
+        let hasResetCredits = !resetCreditItems.isEmpty
         let hasQuotaDetails = hasCredits || hasResetCredits
-        setMenuItemHidden(quotaSeparator, !hasQuotaDetails)
-        setMenuItemHidden(
-            resetCreditSeparator,
-            !Self.shouldShowResetCreditSeparator(
-                hasCredits: hasCredits,
-                hasResetCredits: hasResetCredits
-            )
+        quotaSeparator.isHidden = !hasQuotaDetails
+        resetCreditSeparator.isHidden = !Self.shouldShowResetCreditSeparator(
+            hasCredits: hasCredits,
+            hasResetCredits: hasResetCredits
         )
-        setMenuItemHidden(actionSeparator, !hasQuotaDetails)
+        actionSeparator.isHidden = !hasQuotaDetails
         renderUpdateItem()
         renderErrorItem()
     }
@@ -419,11 +393,11 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         headerItem.title = "ChatGPT"
         renderWindowItem(primaryItem, window: nil, now: Date())
         renderWindowItem(secondaryItem, window: nil, now: Date())
-        setMenuItemHidden(creditsItem, true)
-        setMenuItemHidden(quotaSeparator, true)
-        setMenuItemHidden(resetCreditSeparator, true)
-        setMenuItemHidden(actionSeparator, true)
-        clearResetCreditItems()
+        creditsItem.isHidden = true
+        quotaSeparator.isHidden = true
+        resetCreditSeparator.isHidden = true
+        actionSeparator.isHidden = true
+        synchronizeResetCreditItems(count: 0)
         renderUpdateItem()
         renderErrorItem()
     }
@@ -431,7 +405,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
     private func statusTitle(for quota: CodexQuota?, now: Date = Date()) -> String {
         QuotaFormatter.statusTitle(
             for: quota,
-            includingProductName: false,
             now: now,
             language: language
         )
@@ -470,7 +443,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             now: now,
             language: language
         )
-        setMenuItemHidden(item, false)
+        item.isHidden = false
     }
 
     private func renderResetCredits(
@@ -491,7 +464,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                     language: language
                 )
             )
-            setMenuItemHidden(item, false)
         }
     }
 
@@ -511,13 +483,6 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         }
     }
 
-    private func clearResetCreditItems() {
-        for item in resetCreditItems {
-            menu.removeItem(item)
-        }
-        resetCreditItems.removeAll()
-    }
-
     private func renderUpdateItem() {
         if isInstallingUpdate {
             checkForUpdatesItem.title = AppLocalization.text(.updateInstalling, language: language)
@@ -525,28 +490,16 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             return
         }
         var title = displayedUpdateStatus.title(language: language)
-        switch displayedUpdateStatus {
-        case .idle, .checking:
-            break
-        case .latest, .failed:
-            break
-        case .available:
-            if let lastUpdatePublishedAt {
-                let published = AppLocalization.format(
-                    .publishedAgo,
-                    language: language,
-                    QuotaFormatter.lastUpdated(lastUpdatePublishedAt, language: language)
-                )
-                title += " · \(published)"
-            }
+        if case .available = displayedUpdateStatus, let publishedAt = availableUpdate?.publishedAt {
+            let published = AppLocalization.format(
+                .publishedAgo,
+                language: language,
+                QuotaFormatter.lastUpdated(publishedAt, language: language)
+            )
+            title += " · \(published)"
         }
         checkForUpdatesItem.title = title
-        checkForUpdatesItem.attributedTitle = nil
-        checkForUpdatesItem.isEnabled = !isInstallingUpdate && displayedUpdateStatus.isInteractive
-    }
-
-    private func setMenuItemHidden(_ item: NSMenuItem, _ hidden: Bool) {
-        item.isHidden = hidden
+        checkForUpdatesItem.isEnabled = displayedUpdateStatus.isInteractive
     }
 
     private func renderErrorItem() {
@@ -556,9 +509,9 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 language: language,
                 Self.compactErrorMessage(lastError.localizedDescription)
             )
-            setMenuItemHidden(errorItem, false)
+            errorItem.isHidden = false
         } else {
-            setMenuItemHidden(errorItem, true)
+            errorItem.isHidden = true
         }
     }
 
@@ -588,9 +541,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
             switch result {
             case .success(let update):
                 availableUpdate = update
-                lastUpdatePublishedAt = update?.publishedAt
                 guard let update else {
-                    self.applyUpdateStatus(.latest)
+                    self.applyUpdateStatus(.idle)
                     if !silently {
                         showAlert(
                             title: AppLocalization.text(.latestVersionTitle, language: language),
@@ -612,8 +564,7 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
                 if let availableUpdate {
                     applyUpdateStatus(.available(String(availableUpdate.revision.prefix(7))))
                 } else {
-                    lastUpdatePublishedAt = nil
-                    applyUpdateStatus(.failed)
+                    applyUpdateStatus(.idle)
                 }
                 if !silently {
                     showAlert(
@@ -635,10 +586,8 @@ final class CodexMenuBarCreditAppDelegate: NSObject, NSApplicationDelegate, NSMe
         isPresentingUpdate = true
         let alert = NSAlert()
         alert.messageText = AppLocalization.text(.newVersionTitle, language: language)
-        let revision = update.revision == "unknown"
-            ? ""
-            : "\n\(AppLocalization.format(.buildRevision, language: language, String(update.revision.prefix(7))))"
-        alert.informativeText = "\(update.name)\(revision)\n\(AppLocalization.text(.updatePrompt, language: language))"
+        let revision = AppLocalization.format(.buildRevision, language: language, String(update.revision.prefix(7)))
+        alert.informativeText = "\(update.name)\n\(revision)\n\(AppLocalization.text(.updatePrompt, language: language))"
         alert.addButton(withTitle: AppLocalization.text(.update, language: language))
         alert.addButton(withTitle: AppLocalization.text(.later, language: language))
         let shouldInstall = alert.runModal() == .alertFirstButtonReturn

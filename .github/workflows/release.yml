@@ -21,9 +21,7 @@ jobs:
           persist-credentials: false
 
       - name: Build and test
-        run: |
-          swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
-          swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+        run: swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
 
       - name: Package and verify app
         shell: bash

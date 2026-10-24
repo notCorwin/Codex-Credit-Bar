@@ -4,6 +4,8 @@ import CryptoKit
 import Darwin
 @testable import CodexMenuBarCredit
 
+private let testRevision = "fedcba9876543210fedcba9876543210fedcba98"
+
 private final class LockedFailureCount: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
@@ -163,25 +165,17 @@ private final class TestURLProtocol: URLProtocol, @unchecked Sendable {
 
 final class QuotaTests: XCTestCase {
     @MainActor
-    func testUpdateStatusIsIdleAndRetryableBeforeFirstCheck() {
+    func testUpdateStatusKeepsCheckActionAvailableUnlessChecking() {
         let status = CodexMenuBarCreditAppDelegate.UpdateStatus.idle
-        XCTAssertEqual(status.title, "检查更新")
+        XCTAssertEqual(status.title(language: .simplifiedChinese), "检查更新")
         XCTAssertTrue(status.isInteractive)
-    }
-
-    @MainActor
-    func testUpdateFailureStatusIsVisibleAndRetryable() {
-        let status = CodexMenuBarCreditAppDelegate.UpdateStatus.failed
-        XCTAssertEqual(status.title, "检查更新")
-        XCTAssertTrue(status.isInteractive)
-        XCTAssertEqual(CodexMenuBarCreditAppDelegate.UpdateStatus.checking.title, "检查更新")
-    }
-
-    @MainActor
-    func testLatestUpdateStatusShowsCheckActionAndIsRetryable() {
-        let status = CodexMenuBarCreditAppDelegate.UpdateStatus.latest
-        XCTAssertEqual(status.title, "检查更新")
-        XCTAssertTrue(status.isInteractive)
+        let checking = CodexMenuBarCreditAppDelegate.UpdateStatus.checking
+        XCTAssertEqual(checking.title(language: .simplifiedChinese), "检查更新")
+        XCTAssertFalse(checking.isInteractive)
+        let available = CodexMenuBarCreditAppDelegate.UpdateStatus.available("fedcba9")
+        XCTAssertEqual(available.title(language: .simplifiedChinese), "有最新版本可用 · fedcba9")
+        XCTAssertEqual(available.title(language: .english), "Latest version available · fedcba9")
+        XCTAssertTrue(available.isInteractive)
     }
 
     func testAutomaticUpdatesDefaultToOffAndRespectSavedChoicesAndRetryDelay() throws {
@@ -347,16 +341,15 @@ final class QuotaTests: XCTestCase {
         """.data(using: .utf8)!
 
         let response = try JSONDecoder().decode(RateLimitsResponse.self, from: json)
-        let quota = CodexQuota(response: response, fetchedAt: Date(timeIntervalSince1970: 1000))
+        let quota = CodexQuota(response: response)
 
-        XCTAssertEqual(quota.snapshot.limitId, "codex")
         XCTAssertEqual(quota.statusWindow?.remainingPercent, 60)
         XCTAssertEqual(quota.availableResetCreditCount, 2)
         XCTAssertEqual(quota.resetCredits.map(\.expiresAt), [2000, 3000])
         XCTAssertEqual(quota.planName, "Plus")
     }
 
-    func testCurrentRateLimitPayloadDecodes() throws {
+    func testRateLimitPayloadDecodesUsedFieldsAndIgnoresExtraMetadata() throws {
         let json = """
         {
           "rateLimits": {
@@ -397,14 +390,13 @@ final class QuotaTests: XCTestCase {
 
         let response = try JSONDecoder().decode(RateLimitsResponse.self, from: json)
 
-        XCTAssertEqual(response.accountId, "account-1")
-        XCTAssertEqual(response.rateLimits.limitName, "Codex")
-        XCTAssertEqual(response.rateLimits.rateLimitReachedType, "rate_limit_reached")
-        XCTAssertEqual(response.rateLimits.spendControlReached, false)
-        XCTAssertEqual(response.rateLimits.individualLimit?.remainingPercent, 75)
-        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.id, "reset-1")
-        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.status, "available")
-        XCTAssertEqual(response.rateLimitResetCredits?.credits?.first?.grantedAt, 1781654400)
+        XCTAssertEqual(response.codexRateLimits.primary?.remainingPercent, 75)
+        XCTAssertEqual(response.codexRateLimits.primary?.windowDurationMins, 300)
+        XCTAssertEqual(response.codexRateLimits.primary?.resetsAt, 1784246400)
+        XCTAssertEqual(response.availableResetCreditCount, 1)
+        let credit = try XCTUnwrap(response.rateLimitResetCredits?.credits?.first)
+        XCTAssertEqual(credit.expiresAt, 1784246400)
+        XCTAssertTrue(credit.expirationIsKnown)
     }
 
     func testLegacyBucketIsUsedWhenNoCodexMapExists() throws {
@@ -421,7 +413,7 @@ final class QuotaTests: XCTestCase {
         let quota = CodexQuota(response: response)
 
         XCTAssertEqual(quota.statusWindow?.remainingPercent, 75)
-        XCTAssertEqual(QuotaFormatter.windowName(for: 60), "1 小时额度")
+        XCTAssertEqual(QuotaFormatter.windowTitle(for: 60), "1 小时额度")
     }
 
     func testResetDescriptionUsesReadableChineseUnits() {
@@ -537,19 +529,20 @@ final class QuotaTests: XCTestCase {
         )
     }
 
-    func testResetCreditExpirationUsesTimezoneAndMinutePrecision() {
-        let timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
-        XCTAssertEqual(
-            QuotaFormatter.resetCreditExpiration(at: 1_000, timeZone: timeZone),
-            "1970-01-01 08:16"
-        )
-        XCTAssertEqual(QuotaFormatter.timeZoneLabel(timeZone), "UTC+8")
+    func testResetCreditDescriptionHandlesKnownUnknownAndExpiredDates() {
         XCTAssertEqual(
             QuotaFormatter.resetCreditDescription(
                 at: 1_000 + 60 * 60,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "1 小时后到期"
+        )
+        XCTAssertEqual(
+            QuotaFormatter.resetCreditDescription(
+                at: 900,
+                now: Date(timeIntervalSince1970: 1_000)
+            ),
+            "已到期"
         )
         XCTAssertEqual(
             QuotaFormatter.resetCreditDescription(
@@ -648,9 +641,8 @@ final class QuotaTests: XCTestCase {
         """.data(using: .utf8)!
 
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
-        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "Codex 60%")
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: quota),
             "60%"
         )
     }
@@ -665,7 +657,7 @@ final class QuotaTests: XCTestCase {
         """.data(using: .utf8)!
 
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
-        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota, includingProductName: false), "75%")
+        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "75%")
     }
 
     func testFiveHourExhaustionShowsExtraCredits() throws {
@@ -684,7 +676,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertTrue(QuotaFormatter.statusUsesCredits(for: quota))
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: quota),
             "12.50"
         )
         XCTAssertEqual(QuotaFormatter.creditBalanceDescription(for: quota.credits), "积分剩余：12.50")
@@ -707,7 +699,6 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.statusTitle(
                 for: quota,
-                includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "3 小时 32 分钟"
@@ -731,7 +722,6 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.statusTitle(
                 for: quota,
-                includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "3 天 16 小时"
@@ -753,7 +743,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: quota),
             "12.50"
         )
     }
@@ -775,7 +765,6 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.statusTitle(
                 for: quota,
-                includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "3 天 16 小时"
@@ -797,7 +786,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertTrue(quota.shouldDisplayCredits)
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: quota),
             "12.50"
         )
     }
@@ -816,7 +805,7 @@ final class QuotaTests: XCTestCase {
         let quota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: json))
 
         XCTAssertEqual(quota.statusWindow?.windowDurationMins, 10080)
-        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota, includingProductName: false), "75%")
+        XCTAssertEqual(QuotaFormatter.statusTitle(for: quota), "75%")
     }
 
     func testProWeeklyExhaustionFallsBackToCreditsThenCountdown() throws {
@@ -832,7 +821,7 @@ final class QuotaTests: XCTestCase {
         let creditQuota = CodexQuota(response: try JSONDecoder().decode(RateLimitsResponse.self, from: creditJSON))
 
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: creditQuota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: creditQuota),
             "90.32"
         )
 
@@ -850,7 +839,6 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(
             QuotaFormatter.statusTitle(
                 for: noCreditQuota,
-                includingProductName: false,
                 now: Date(timeIntervalSince1970: 1_000)
             ),
             "3 小时 32 分钟"
@@ -871,7 +859,7 @@ final class QuotaTests: XCTestCase {
 
         XCTAssertFalse(QuotaFormatter.statusUsesCredits(for: quota))
         XCTAssertEqual(
-            QuotaFormatter.statusTitle(for: quota, includingProductName: false),
+            QuotaFormatter.statusTitle(for: quota),
             "∞"
         )
     }
@@ -1594,14 +1582,6 @@ final class QuotaTests: XCTestCase {
         wait(for: [expectation], timeout: 5)
     }
 
-    func testRevisionParserFindsBuildRevision() {
-        XCTAssertEqual(
-            AppUpdater.revision(in: "自动构建自提交 0123456789abcdef0123456789abcdef01234567。"),
-            "0123456789abcdef0123456789abcdef01234567"
-        )
-        XCTAssertNil(AppUpdater.revision(in: "没有提交信息"))
-    }
-
     func testUpdateCheckUsesReleaseManifest() {
         XCTAssertEqual(
             AppUpdater.manifestURL.absoluteString,
@@ -1697,7 +1677,7 @@ final class QuotaTests: XCTestCase {
         updater.downloadAndInstall(
             AppUpdate(
                 name: "autobuild",
-                revision: "unknown",
+                revision: testRevision,
                 assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!,
                 expectedSHA256: String(repeating: "0", count: 64)
             )
@@ -1797,7 +1777,7 @@ final class QuotaTests: XCTestCase {
         updater.downloadAndInstall(
             AppUpdate(
                 name: "autobuild",
-                revision: "unknown",
+                revision: testRevision,
                 assetURL: URL(string: "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar")!,
                 expectedSHA256: archiveDigest
             )
@@ -1819,35 +1799,35 @@ final class QuotaTests: XCTestCase {
         reference.value = nil
     }
 
-    func testManifestSelectsRevisionBoundAssetAndRecognizesInstalledRevision() throws {
+    func testManifestNormalizesRevisionDigestAndRecognizesInstalledRevision() throws {
         let revision = "fedcba9876543210fedcba9876543210fedcba98"
         let digest = String(repeating: "A", count: 64)
-        let versionedURL = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
+        let canonicalURL = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
         let json = """
         {
-          "revision": "\(revision)",
-          "asset_url": "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar",
-          "versioned_asset_url": "\(versionedURL)",
+          "revision": "\(revision.uppercased())",
+          "asset_url": "\(canonicalURL)",
           "digest": "sha256:\(digest)",
           "published_at": "2026-09-07T00:00:00Z"
         }
         """.data(using: .utf8)!
 
-        guard case .success(let available) = AppUpdater.parse(
-            data: json,
-            currentRevision: String(repeating: "0", count: 40)
-        ) else {
-            return XCTFail("Expected an available update")
+        for installedRevision in [nil, "development", String(repeating: "0", count: 40)] {
+            guard case .success(let available) = AppUpdater.parse(data: json, currentRevision: installedRevision) else {
+                return XCTFail("Expected an available update")
+            }
+            XCTAssertEqual(available?.revision, revision)
+            XCTAssertEqual(available?.assetURL.absoluteString, canonicalURL)
+            XCTAssertEqual(available?.expectedSHA256, digest.lowercased())
+            XCTAssertEqual(available?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
         }
-        XCTAssertEqual(available?.revision, revision)
-        XCTAssertEqual(available?.assetURL.absoluteString, versionedURL)
-        XCTAssertEqual(available?.expectedSHA256, digest.lowercased())
-        XCTAssertEqual(available?.publishedAt, Date(timeIntervalSince1970: 1_788_739_200))
 
-        guard case .success(let latest) = AppUpdater.parse(data: json, currentRevision: revision) else {
-            return XCTFail("Expected the installed revision to be current")
+        for installedRevision in [revision, revision.uppercased()] {
+            guard case .success(let latest) = AppUpdater.parse(data: json, currentRevision: installedRevision) else {
+                return XCTFail("Expected the installed revision to be current")
+            }
+            XCTAssertNil(latest)
         }
-        XCTAssertNil(latest)
     }
 
     func testRollingManifestUsesCanonicalAssetAndRecognizesInstalledRevision() throws {
@@ -1874,11 +1854,9 @@ final class QuotaTests: XCTestCase {
     func testManifestRejectsMissingDigestAndUnexpectedAssets() throws {
         let revision = "fedcba9876543210fedcba9876543210fedcba98"
         let canonical = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
-        let versioned = "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
         let valid: [String: String] = [
             "revision": revision,
             "asset_url": canonical,
-            "versioned_asset_url": versioned,
             "digest": "sha256:" + String(repeating: "a", count: 64)
         ]
         var cases: [[String: String]] = []
@@ -1888,15 +1866,15 @@ final class QuotaTests: XCTestCase {
         var wrongCanonical = valid
         wrongCanonical["asset_url"] = "https://example.com/Codex.Credit.Bar.app.tar"
         cases.append(wrongCanonical)
-        var mismatchedVersioned = valid
-        mismatchedVersioned["versioned_asset_url"] = versioned.replacingOccurrences(
-            of: revision,
-            with: String(repeating: "0", count: 40)
-        )
-        cases.append(mismatchedVersioned)
         var malformedRevision = valid
         malformedRevision["revision"] = "not-a-commit"
         cases.append(malformedRevision)
+        var nonHexRevision = valid
+        nonHexRevision["revision"] = String(repeating: "g", count: 40)
+        cases.append(nonHexRevision)
+        var malformedDigest = valid
+        malformedDigest["digest"] = "sha256:not-a-digest"
+        cases.append(malformedDigest)
 
         for manifest in cases {
             let data = try JSONSerialization.data(withJSONObject: manifest)
@@ -1932,7 +1910,7 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(AppUpdater.retryDate(for: generic, now: now), Date(timeIntervalSince1970: 1_060))
     }
 
-    func testCanonicalAndRevisionSpecificUpdateURLs() throws {
+    func testUpdateAssetURLMustMatchRollingReleaseExactly() throws {
         let revision = String(repeating: "a", count: 40)
         let canonical = try XCTUnwrap(URL(string:
             "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.tar"
@@ -1941,8 +1919,7 @@ final class QuotaTests: XCTestCase {
             "https://github.com/notCorwin/Codex-Credit-Bar/releases/download/autobuild/Codex.Credit.Bar.app.\(revision).123-1.tar"
         ))
         XCTAssertTrue(AppUpdater.isCanonicalAssetURL(canonical))
-        XCTAssertTrue(AppUpdater.isExpectedAssetURL(versioned, revision: revision))
-        XCTAssertFalse(AppUpdater.isExpectedAssetURL(versioned, revision: String(repeating: "b", count: 40)))
+        XCTAssertFalse(AppUpdater.isCanonicalAssetURL(versioned))
         XCTAssertFalse(AppUpdater.isCanonicalAssetURL(try XCTUnwrap(URL(string:
             canonical.absoluteString + "?download=1"
         ))))
@@ -1994,6 +1971,39 @@ final class QuotaTests: XCTestCase {
         XCTAssertFalse(AppUpdater.isExecutableRegularFile(atPath: link.path))
     }
 
+    func testInstallRejectsMismatchedOrUnknownRevisionBeforeReplacingApp() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)", isDirectory: true)
+        let currentApp = root.appendingPathComponent("Codex Credit Bar.app", isDirectory: true)
+        let updateRoot = root.appendingPathComponent("update", isDirectory: true)
+        let updateApp = updateRoot.appendingPathComponent("Codex Credit Bar.app", isDirectory: true)
+        let archive = root.appendingPathComponent("update.tar")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try makeTestApp(at: currentApp, marker: "old")
+        let updater = AppUpdater(
+            currentAppURL: currentApp,
+            relauncher: { _, _ in XCTFail("An invalid revision must not reach relaunch") }
+        )
+
+        for (bundleRevision, expectedRevision) in [
+            (testRevision, String(repeating: "0", count: 40)),
+            ("development", testRevision),
+            (testRevision, "unknown"),
+        ] {
+            try makeTestApp(at: updateApp, marker: "new", revision: bundleRevision)
+            try runTar(arguments: ["-cf", archive.path, "-C", updateRoot.path, "Codex Credit Bar.app"])
+            XCTAssertThrowsError(try updater.install(downloadedFile: archive, expectedRevision: expectedRevision)) { error in
+                guard case AppUpdateError.invalidPackage = error else {
+                    return XCTFail("Expected the bundle revision to be rejected: \(error)")
+                }
+            }
+            XCTAssertEqual(
+                try String(contentsOf: currentApp.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8),
+                "old"
+            )
+        }
+    }
+
     func testFailedRelaunchRestoresPreviousAppAndCleansStaging() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CodexMenuBarCreditTests-\(UUID().uuidString)", isDirectory: true)
@@ -2015,7 +2025,7 @@ final class QuotaTests: XCTestCase {
                 throw TestRelaunchError.expected
             }
         )
-        XCTAssertThrowsError(try updater.install(downloadedFile: archive, expectedRevision: "unknown")) { error in
+        XCTAssertThrowsError(try updater.install(downloadedFile: archive, expectedRevision: testRevision)) { error in
             guard let error = error as? AppUpdateError else {
                 XCTFail("Expected an AppUpdateError")
                 return
@@ -2175,7 +2185,7 @@ final class QuotaTests: XCTestCase {
             currentAppURL: URL(fileURLWithPath: "/tmp/Codex Credit Bar.app")
         )
         XCTAssertThrowsError(
-            try updater.install(downloadedFile: archive, expectedRevision: "unknown")
+            try updater.install(downloadedFile: archive, expectedRevision: testRevision)
         ) { error in
             guard case AppUpdateError.invalidPackage = error else {
                 XCTFail("Expected an oversized package to be rejected before extraction")
@@ -2251,7 +2261,7 @@ final class QuotaTests: XCTestCase {
         return process
     }
 
-    private func makeTestApp(at appURL: URL, marker: String) throws {
+    private func makeTestApp(at appURL: URL, marker: String, revision: String = testRevision) throws {
         let contents = appURL.appendingPathComponent("Contents", isDirectory: true)
         let macOS = contents.appendingPathComponent("MacOS", isDirectory: true)
         let resources = contents.appendingPathComponent("Resources", isDirectory: true)
@@ -2272,7 +2282,7 @@ final class QuotaTests: XCTestCase {
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": "Codex Credit Bar",
             "CFBundlePackageType": "APPL",
-            "CFBundleSourceRevision": "development"
+            "CFBundleSourceRevision": revision
         ]
         let plist = try PropertyListSerialization.data(
             fromPropertyList: info,
